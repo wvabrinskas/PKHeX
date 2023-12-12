@@ -360,6 +360,7 @@ public enum Move : ushort
     WaterPulse,
     DoomDesire,
     PsychoBoost,
+    BluntPass,
     Roost,
     Gravity,
     MiracleEye,
