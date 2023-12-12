@@ -4,6 +4,8 @@ namespace PKHeX.Core;
 
 /// <summary>
 /// Details about moves in <see cref="EntityContext.Gen3"/>
+/// In order of moves in the game data.
+/// eg. Blunt Pass move num 355 in this array which matches its number in the game data.
 /// </summary>
 internal static class MoveInfo3
 {
@@ -26,6 +28,6 @@ internal static class MoveInfo3
         15, 10, 20, 05, 05, 10, 10, 20, 05, 10, 20, 10, 20, 20, 20, 05, 05, 15, 20, 10,
         15, 20, 15, 10, 10, 15, 10, 05, 05, 10, 15, 10, 05, 20, 25, 05, 40, 10, 05, 40,
         15, 20, 20, 05, 15, 20, 30, 15, 15, 05, 10, 30, 20, 30, 15, 05, 40, 15, 05, 20,
-        05, 15, 25, 40, 15, 20, 15, 20, 15, 20, 10, 20, 20, 05, 05,
+        05, 15, 25, 40, 15, 20, 15, 20, 15, 20, 10, 20, 20, 05, 05, 10
     ];
 }

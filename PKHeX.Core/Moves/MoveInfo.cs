@@ -20,7 +20,8 @@ public static class MoveInfo
         var table = GetPPTable(context);
         if (move >= table.Length)
             return 0;
-        return table[move];
+        byte result = table[move];
+        return result;
     }
 
     /// <summary>

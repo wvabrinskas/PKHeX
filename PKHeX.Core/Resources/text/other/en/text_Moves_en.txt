@@ -353,6 +353,7 @@ Shock Wave
 Water Pulse
 Doom Desire
 Psycho Boost
+Blunt Pass
 Roost
 Gravity
 Miracle Eye
