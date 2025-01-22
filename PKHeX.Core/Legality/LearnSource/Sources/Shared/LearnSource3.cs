@@ -6,6 +6,8 @@ public abstract class LearnSource3
 {
     private protected readonly EggMoves6[] EggMoves = EggMoves6.GetArray(BinLinkerAccessor.Get(Util.GetBinaryResource("eggmove_rs.pkl"), "rs"u8)); // same for all Gen3 games
 
+    // Numbers here are in order of TM number, the value is the value in the MoveInfo3.cs
+    // eg. Blunt Pass is number 355 and the TM number is 15, so it's at index 51 with a value of 355
     internal static ReadOnlySpan<ushort> TM_3 =>
     [
         264, 337, 352, 347, 046, 092, 258, 339, 331, 237,
