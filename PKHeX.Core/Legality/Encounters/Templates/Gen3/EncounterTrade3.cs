@@ -6,7 +6,7 @@ namespace PKHeX.Core;
 /// Generation 3 Trade Encounter
 /// </summary>
 public sealed record EncounterTrade3 : IEncounterable, IEncounterMatch, IFixedTrainer, IFixedNickname,
-    IFixedGender, IFixedNature, IFixedIVSet, IEncounterConvertible<PK3>, IContestStatsReadOnly
+    IFixedGender, IFixedNature, IFixedIVSet, IEncounterConvertible<PK3>, IContestStatsReadOnly, ITrainerID32ReadOnly
 {
     public byte Generation => 3;
     public EntityContext Context => EntityContext.Gen3;
@@ -45,6 +45,7 @@ public sealed record EncounterTrade3 : IEncounterable, IEncounterMatch, IFixedTr
 
     public required ushort TID16 { get; init; }
     public ushort SID16 { get; init; }
+    public uint ID32 => TID16 | (uint)(SID16 << 16);
 
     public byte ContestCool   { get; private init; }
     public byte ContestBeauty { get; private init; }
@@ -85,8 +86,8 @@ public sealed record EncounterTrade3 : IEncounterable, IEncounterMatch, IFixedTr
 
     public PK3 ConvertToPKM(ITrainerInfo tr, EncounterCriteria criteria)
     {
+        int language = (int)Language.GetSafeLanguage(Generation, (LanguageID)tr.Language);
         var version = this.GetCompatibleVersion(tr.Version);
-        int lang = (int)Language.GetSafeLanguage(Generation, (LanguageID)tr.Language, version);
         var pi = PersonalTable.E[Species];
         var pk = new PK3
         {
@@ -99,17 +100,17 @@ public sealed record EncounterTrade3 : IEncounterable, IEncounterMatch, IFixedTr
             Ball = (byte)FixedBall,
             OriginalTrainerFriendship = pi.BaseFriendship,
 
-            Language = lang,
+            Language = language,
             OriginalTrainerGender = OTGender,
             TID16 = TID16,
             SID16 = SID16,
         };
 
         // Italian LG Jynx untranslated from English name
-        if (Species == (int)Core.Species.Jynx && version == GameVersion.LG && lang == (int)LanguageID.Italian)
-            lang = 2;
-        pk.Nickname = Nicknames.Span[lang];
-        pk.OriginalTrainerName = TrainerNames.Span[lang];
+        if (Species == (int)Core.Species.Jynx && version == GameVersion.LG && language == (int)LanguageID.Italian)
+            language = 2;
+        pk.Nickname = Nicknames.Span[language];
+        pk.OriginalTrainerName = TrainerNames.Span[language];
 
         EncounterUtil.SetEncounterMoves(pk, Version, Level);
         SetPINGA(pk, criteria);

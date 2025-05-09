@@ -108,7 +108,7 @@ public partial class ReportGrid : Form
             if (prop.Length == 0)
                 continue;
             var col = dgData.Columns[prop];
-            if (col != null)
+            if (col is not null)
                 col.Visible = false;
         }
     }
@@ -161,6 +161,8 @@ public partial class ReportGrid : Form
 
     private void PromptSaveCSV(object sender, FormClosingEventArgs e)
     {
+        if (ModifierKeys.HasFlag(Keys.Shift))
+            return;
         if (WinFormsUtil.Prompt(MessageBoxButtons.YesNo, MsgReportExportCSV) != DialogResult.Yes)
             return;
         using var savecsv = new SaveFileDialog();
@@ -194,7 +196,7 @@ public partial class ReportGrid : Form
             return base.ProcessCmdKey(ref msg, keyData);
 
         var content = dgData.GetClipboardContent();
-        if (content == null)
+        if (content is null)
             return base.ProcessCmdKey(ref msg, keyData);
 
         string data = content.GetText();

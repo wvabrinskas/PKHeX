@@ -393,7 +393,7 @@ public sealed class WC9(byte[] Data) : DataMysteryGift(Data), ILangNick, INature
         get => GetOT(Language);
         set
         {
-            for (int i = 1; i < (int)LanguageID.ChineseT; i++)
+            for (int i = 1; i <= (int)LanguageID.ChineseT; i++)
                 SetOT(i, value);
         }
     }
@@ -492,7 +492,7 @@ public sealed class WC9(byte[] Data) : DataMysteryGift(Data), ILangNick, INature
           //TeraTypeOverride = TeraTypeOverride,
         };
         // The game doesn't have random tera types.
-        pk.SetMaximumPPCurrent();
+        pk.HealPP();
 
         if ((tr.Generation > Generation && OriginGame == 0) || !CanBeReceivedByVersion(pk))
         {
@@ -560,10 +560,8 @@ public sealed class WC9(byte[] Data) : DataMysteryGift(Data), ILangNick, INature
     {
         if (!IsDateRestricted)
             return EncounterDate.GetDateSwitch();
-        if (EncounterServerDate.WC9GiftsChk.TryGetValue(Checksum, out var range))
-            return range.Start;
-        if (EncounterServerDate.WC9Gifts.TryGetValue(CardID, out range))
-            return range.Start;
+        if (this.GetDistributionWindow(out var window))
+            return window.GetGenerateDate();
         return EncounterDate.GetDateSwitch();
     }
 

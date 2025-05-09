@@ -7,7 +7,7 @@ namespace PKHeX.Core;
 /// <summary>
 /// Generation 3 <see cref="SaveFile"/> object for Pokémon XD saves.
 /// </summary>
-public sealed class SAV3XD : SaveFile, IGCSaveFile, IBoxDetailName, IDaycareStorage, IDaycareExperience
+public sealed class SAV3XD : SaveFile, IGCSaveFile, IBoxDetailName, IDaycareStorage, IDaycareExperience, IGCRegion
 {
     protected internal override string ShortSummary => $"{OT} ({Version}) {PlayTimeString}";
     public override string Extension => this.GCExtension();
@@ -161,7 +161,7 @@ public sealed class SAV3XD : SaveFile, IGCSaveFile, IBoxDetailName, IDaycareStor
 
         // Put save slot back in original save data
         var destOffset = SLOT_START + (SaveIndex * SLOT_SIZE);
-        byte[] dest = MemoryCard != null ? MemoryCard.ReadSaveGameData().ToArray() : (byte[])BAK.Clone();
+        byte[] dest = MemoryCard is not null ? MemoryCard.ReadSaveGameData().ToArray() : (byte[])BAK.Clone();
         var destSpan = dest.AsSpan(destOffset, Data.Length);
 
         // Get updated save slot data

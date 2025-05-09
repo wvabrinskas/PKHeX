@@ -1,10 +1,9 @@
-using System;
-
 namespace PKHeX.Core;
 
 public abstract class LearnSource3
 {
-    private protected readonly EggMoves6[] EggMoves = EggMoves6.GetArray(BinLinkerAccessor.Get(Util.GetBinaryResource("eggmove_rs.pkl"), "rs"u8)); // same for all Gen3 games
+    /*
+        private protected readonly EggMoves6[] EggMoves = EggMoves6.GetArray(BinLinkerAccessor.Get(Util.GetBinaryResource("eggmove_rs.pkl"), "rs"u8)); // same for all Gen3 games
 
     // Numbers here are in order of TM number, the value is the value in the MoveInfo3.cs
     // eg. Blunt Pass is number 355 and the TM number is 15, so it's at index 51 with a value of 355
@@ -19,4 +18,6 @@ public abstract class LearnSource3
     ];
 
     internal static ReadOnlySpan<ushort> HM_3 => [ 15, 19, 57, 70, 148, 249, 127, 291 ];
+    */
+    private protected static readonly EggMoves6[] EggMoves = EggMoves6.GetArray(BinLinkerAccessor.Get(Util.GetBinaryResource("eggmove_rs.pkl"), "rs"u8)); // same for all Gen3 games
 }

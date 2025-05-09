@@ -13,20 +13,20 @@ public sealed record EncounterStatic8N : EncounterStatic8Nest<EncounterStatic8N>
 {
     private readonly byte MinRank;
     private readonly byte MaxRank;
-    private readonly byte NestID;
+    private readonly byte NestIndex;
 
     private string RankString=> MinRank == MaxRank ? $"{MinRank+1}" : $"{MinRank+1}-{MaxRank+1}";
-    public override string Name => $"Stock Raid Den Encounter [{NestID:000}] {RankString}★";
+    public override string Name => $"Stock Raid Den Encounter [{NestIndex:000}] {RankString}★";
 
-    private bool IsNestLocation(byte loc) => GetNestLocations(NestID).Contains(loc);
+    private bool IsValidMetLocation(byte metLocation) => GetNestLocations(NestIndex).Contains(metLocation);
 
     public override byte Level { get => LevelMin; init { } }
     public override byte LevelMin => LevelCaps[MinRank * 2];
     public override byte LevelMax => LevelCaps[(MaxRank * 2) + 1];
 
-    public EncounterStatic8N(byte nestID, byte minRank, byte maxRank, byte val, [ConstantExpected] GameVersion game) : base(game)
+    public EncounterStatic8N(byte nestIndex, byte minRank, byte maxRank, byte val, [ConstantExpected] GameVersion game) : base(game)
     {
-        NestID = nestID;
+        NestIndex = nestIndex;
         MinRank = minRank;
         MaxRank = maxRank;
         DynamaxLevel = (byte)(MinRank + 1u);
@@ -42,6 +42,7 @@ public sealed record EncounterStatic8N : EncounterStatic8Nest<EncounterStatic8N>
         CanGigantamax = data[5] != 0,
     };
 
+    /// <summary> Level ranges based on <see cref="MinRank"/> and <see cref="MaxRank"/>. </summary>
     private static ReadOnlySpan<byte> LevelCaps =>
     [
         15, 20, // 0
@@ -66,7 +67,7 @@ public sealed record EncounterStatic8N : EncounterStatic8Nest<EncounterStatic8N>
             var location = pk.MetLocation;
             if (location <= byte.MaxValue) // Should always be true, no met locations > 255.
             {
-                if (IsInaccessibleRank12Nest(NestID, (byte)location))
+                if (IsInaccessibleRank12Nest(NestIndex, (byte)location))
                     return false;
             }
         }
@@ -109,7 +110,7 @@ public sealed record EncounterStatic8N : EncounterStatic8Nest<EncounterStatic8N>
             return true;
         if (loc > byte.MaxValue)
             return false;
-        return IsNestLocation((byte)loc);
+        return IsValidMetLocation((byte)loc);
     }
 
     public (bool Possible, bool ForceNoShiny) IsPossibleSeed<T>(T pk, ulong seed, bool checkDmax) where T : PKM
@@ -158,6 +159,18 @@ public sealed record EncounterStatic8N : EncounterStatic8Nest<EncounterStatic8N>
         var deltaRange = rank == 4 ? 3u : 2u;
         var boost = (int)rand.NextInt(deltaRange);
         return (byte)(baseValue + boost);
+    }
+
+    public override void GenerateSeed64(PKM pk, ulong seed)
+    {
+        var (_, noShiny) = IsPossibleSeed(pk, seed, false);
+        var param = GetParam();
+        if (noShiny) // Should never be hit via ctor as we don't generate downleveled.
+            param = param with { Shiny = Shiny.Never };
+        var criteria = EncounterCriteria.Unrestricted;
+        var pk8 = (PK8)pk;
+        Span<int> iv = stackalloc int[6];
+        RaidRNG.TryApply(pk8, seed, iv, param, criteria);
     }
 
     protected override bool TryApply(PK8 pk, ulong seed, Span<int> iv, GenerateParam8 param, EncounterCriteria criteria)

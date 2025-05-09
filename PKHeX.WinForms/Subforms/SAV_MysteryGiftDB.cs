@@ -7,6 +7,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using PKHeX.Core;
+using PKHeX.Core.Searching;
 using PKHeX.Drawing.PokeSprite;
 using PKHeX.WinForms.Properties;
 using PKHeX.WinForms.Controls;
@@ -116,7 +117,7 @@ public partial class SAV_MysteryGiftDB : Form
     private const int RES_MAX = GridWidth * GridHeight;
     private readonly string Counter;
     private readonly string Viewed;
-    private const int MAXFORMAT = PKX.Generation;
+    private const int MAXFORMAT = Latest.Generation;
 
     private bool GetShiftedIndex(ref int index)
     {
@@ -134,12 +135,13 @@ public partial class SAV_MysteryGiftDB : Form
             return;
         var temp = Results[index].ConvertToPKM(SAV);
         var pk = EntityConverter.ConvertToType(temp, SAV.PKMType, out var c);
-        if (pk == null)
+        if (pk is null)
         {
             WinFormsUtil.Error(c.GetDisplayString(temp, SAV.PKMType));
             return;
         }
-        SAV.AdaptPKM(pk);
+        SAV.AdaptToSaveFile(pk);
+        pk.RefreshChecksum();
         PKME_Tabs.PopulateFields(pk, false);
         slotSelected = index;
         slotColor = SpriteUtil.Spriter.View;
@@ -237,24 +239,15 @@ public partial class SAV_MysteryGiftDB : Form
             System.Media.SystemSounds.Asterisk.Play();
     }
 
-    private static Func<MysteryGift, bool> IsPresent<TTable>(TTable pt) where TTable : IPersonalTable => z => pt.IsPresentInGame(z.Species, z.Form);
-
     private void LoadDatabase()
     {
         var db = EncounterEvent.GetAllEvents();
 
         if (Main.Settings.MysteryDb.FilterUnavailableSpecies)
         {
-            db = SAV switch
-            {
-                SAV9SV s9 => db.Where(IsPresent(s9.Personal)),
-                SAV8SWSH s8 => db.Where(IsPresent(s8.Personal)),
-                SAV8BS b8 => db.Where(IsPresent(b8.Personal)),
-                SAV8LA a8 => db.Where(IsPresent(a8.Personal)),
-                SAV7b => db.Where(z => z is WB7),
-                SAV7 => db.Where(z => z.Generation < 7 || z is WC7),
-                _ => db.Where(z => z.Generation <= SAV.Generation),
-            };
+            var filter = EntityPresenceFilters.GetFilterGift<MysteryGift>(SAV.Context, SAV.Generation);
+            if (filter != null)
+                db = db.Where(filter);
         }
 
         RawDB = [..db];
@@ -415,11 +408,11 @@ public partial class SAV_MysteryGiftDB : Form
 
     private void Menu_Import_Click(object sender, EventArgs e)
     {
-        if (!BoxView.GetBulkImportSettings(out var clearAll, out var overwrite, out var noSetb))
+        if (!BoxView.GetBulkImportSettings(out var clearAll, out var overwrite, out var settings))
             return;
 
         int box = BoxView.Box.CurrentBox;
-        int ctr = SAV.LoadBoxes(Results, out var result, box, clearAll, overwrite, noSetb);
+        int ctr = SAV.LoadBoxes(Results, out var result, box, clearAll, overwrite, settings);
         if (ctr <= 0)
             return;
 

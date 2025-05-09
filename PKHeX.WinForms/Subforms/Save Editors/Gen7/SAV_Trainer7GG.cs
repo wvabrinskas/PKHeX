@@ -41,7 +41,7 @@ public partial class SAV_Trainer7GG : Form
             return;
         if (e.AllowedEffect == (DragDropEffects.Copy | DragDropEffects.Link)) // external file
             e.Effect = DragDropEffects.Copy;
-        else if (e.Data != null) // within
+        else if (e.Data is not null) // within
             e.Effect = DragDropEffects.Move;
     }
 
@@ -60,7 +60,7 @@ public partial class SAV_Trainer7GG : Form
         CB_Language.InitializeBinding();
         CB_Language.DataSource = GameInfo.LanguageDataSource(SAV.Generation);
         CB_Game.InitializeBinding();
-        CB_Game.DataSource = new BindingSource(GameInfo.VersionDataSource.Where(z => GameVersion.Gen7b.Contains(z.Value)).ToList(), string.Empty);
+        CB_Game.DataSource = new BindingSource(GameInfo.VersionDataSource.Where(z => (GameVersion)z.Value is GameVersion.GP or GameVersion.GE).ToList(), string.Empty);
     }
 
     private void LoadTrainerInfo()

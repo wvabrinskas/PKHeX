@@ -6,7 +6,8 @@ namespace PKHeX.Core;
 /// <summary>
 /// Generation 2 Trade Encounter
 /// </summary>
-public sealed record EncounterTrade2 : IEncounterable, IEncounterMatch, IFixedTrainer, IFixedNickname, IFixedGender, IFixedIVSet, IEncounterConvertible<PK2>
+public sealed record EncounterTrade2 : IEncounterable, IEncounterMatch, IEncounterConvertible<PK2>,
+    IFixedTrainer, IFixedNickname, IFixedGender, IFixedIVSet, ITrainerID16ReadOnly
 {
     public byte Generation => 2;
     public EntityContext Context => EntityContext.Gen2;
@@ -55,9 +56,9 @@ public sealed record EncounterTrade2 : IEncounterable, IEncounterMatch, IFixedTr
 
     public PK2 ConvertToPKM(ITrainerInfo tr, EncounterCriteria criteria)
     {
-        // Prefer to generate as Crystal, as it will include met data.
-        int lang = (int)Language.GetSafeLanguage(Generation, (LanguageID)tr.Language, GameVersion.C);
-        var isJapanese = lang == (int)LanguageID.Japanese;
+        var version = this.GetCompatibleVersion(tr.Version);
+        int language = (int)Language.GetSafeLanguage(Generation, (LanguageID)tr.Language, version);
+        var isJapanese = language == (int)LanguageID.Japanese;
         var pi = PersonalTable.C[Species];
         var pk = new PK2(isJapanese)
         {
@@ -66,8 +67,8 @@ public sealed record EncounterTrade2 : IEncounterable, IEncounterMatch, IFixedTr
 
             MetLocation = Location,
 
-            Nickname = Nicknames.Span[lang],
-            OriginalTrainerName = TrainerNames.Span[lang],
+            Nickname = Nicknames.Span[language],
+            OriginalTrainerName = TrainerNames.Span[language],
             OriginalTrainerFriendship = pi.BaseFriendship,
         };
 
@@ -85,7 +86,7 @@ public sealed record EncounterTrade2 : IEncounterable, IEncounterMatch, IFixedTr
             pk.TID16 = tr.TID16;
         }
 
-        EncounterUtil.SetEncounterMoves(pk, Version, Level);
+        EncounterUtil.SetEncounterMoves(pk, version, Level);
 
         pk.ResetPartyStats();
 

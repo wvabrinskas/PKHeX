@@ -6,7 +6,7 @@ namespace PKHeX.Core;
 /// Generation 8 Static Encounter
 /// </summary>
 public sealed record EncounterStatic8a
-    : IEncounterable, IEncounterMatch, IEncounterConvertible<PA8>, ISeedCorrelation64<PKM>,
+    : IEncounterable, IEncounterMatch, IEncounterConvertible<PA8>, ISeedCorrelation64<PKM>, IGenerateSeed64,
         IAlphaReadOnly, IMasteryInitialMoveShop8, IScaledSizeReadOnly,
         IMoveset, IFlawlessIVCount, IFatefulEncounterReadOnly, IFixedGender
 {
@@ -60,11 +60,11 @@ public sealed record EncounterStatic8a
     public PA8 ConvertToPKM(ITrainerInfo tr) => ConvertToPKM(tr, EncounterCriteria.Unrestricted);
     public PA8 ConvertToPKM(ITrainerInfo tr, EncounterCriteria criteria)
     {
-        int lang = (int)Language.GetSafeLanguage(Generation, (LanguageID)tr.Language);
+        int language = (int)Language.GetSafeLanguage(Generation, (LanguageID)tr.Language);
         var pi = PersonalTable.LA[Species, Form];
         var pk = new PA8
         {
-            Language = lang,
+            Language = language,
             Species = Species,
             Form = Form,
             CurrentLevel = LevelMin,
@@ -81,15 +81,10 @@ public sealed record EncounterStatic8a
 
             IsAlpha = IsAlpha,
             Ball = (byte)(FixedBall == Ball.None ? Ball.LAPoke : FixedBall),
-            Nickname = SpeciesName.GetSpeciesNameGeneration(Species, lang, Generation),
+            Nickname = SpeciesName.GetSpeciesNameGeneration(Species, language, Generation),
         };
-        SetPINGA(pk, criteria);
-        pk.ResetHeight();
-        pk.ResetWeight();
-        SetEncounterMoves(pk, pk.MetLevel);
 
-        if (IsAlpha)
-            pk.IsAlpha = true;
+        SetPINGA(pk, criteria);
 
         pk.ResetPartyStats();
         return pk;
@@ -99,6 +94,11 @@ public sealed record EncounterStatic8a
     {
         var para = GetParams();
         var (_, slotSeed) = Overworld8aRNG.ApplyDetails(pk, criteria, para, IsAlpha);
+        Finalize(pk, slotSeed);
+    }
+
+    private void Finalize(PA8 pk, ulong slotSeed)
+    {
         // Phione and Zorua have random levels; follow the correlation instead of giving the lowest level.
         if (LevelMin != LevelMax)
             pk.MetLevel = pk.CurrentLevel = Overworld8aRNG.GetRandomLevel(slotSeed, LevelMin, LevelMax);
@@ -112,6 +112,19 @@ public sealed record EncounterStatic8a
         if (HasFixedWeight)
             pk.WeightScalar = WeightScalar;
         pk.Scale = pk.HeightScalar;
+
+        pk.ResetHeight();
+        pk.ResetWeight();
+        SetEncounterMoves(pk, pk.MetLevel);
+    }
+
+    public void GenerateSeed64(PKM pk, ulong seed)
+    {
+        var pa8 = (PA8)pk;
+        var criteria = EncounterCriteria.Unrestricted;
+        var para = GetParams();
+        var (_, slotSeed) = Overworld8aRNG.ApplyDetails(pa8, criteria, para, IsAlpha);
+        Finalize(pa8, slotSeed);
     }
 
     private void SetEncounterMoves(PA8 pk, int level)
@@ -200,8 +213,9 @@ public sealed record EncounterStatic8a
                         return false;
                     if (pk is IRibbonSetMark9 { RibbonMarkAlpha: false })
                         return false;
-                    if (pk.IsUntraded)
-                        return false;
+                    // un-traded: don't bother checking; PLA could handle (PLA<->HOME) and never be traded.
+                    // Don't bother checking for HOME Tracker. The updated values is sufficient.
+                    // Having the Alpha mark set will be flagged if lacking a tracker, no need to block matching.
                 }
             }
             else

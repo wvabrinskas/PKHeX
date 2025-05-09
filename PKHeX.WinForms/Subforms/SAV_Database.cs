@@ -6,6 +6,7 @@ using System.Drawing;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using PKHeX.Core;
@@ -27,9 +28,24 @@ public partial class SAV_Database : Form
     private const int GridWidth = 6;
     private const int GridHeight = 11;
 
+    private readonly PictureBox[] PKXBOXES;
+    private readonly string DatabasePath = Main.DatabasePath;
+    private List<SlotCache> Results = [];
+    private List<SlotCache> RawDB = [];
+    private int slotSelected = -1; // = null;
+    private Image? slotColor;
+    private const int RES_MIN = GridWidth * 1;
+    private const int RES_MAX = GridWidth * GridHeight;
+    private readonly string Counter;
+    private readonly string Viewed;
+    private const int MAXFORMAT = Latest.Generation;
+    private readonly SummaryPreviewer ShowSet = new();
+    private CancellationTokenSource cts = new();
+
     public SAV_Database(PKMEditor f1, SAVEditor saveditor)
     {
         InitializeComponent();
+        FormClosing += (_, _) => cts.Cancel();
         WinFormsUtil.TranslateInterface(this, Main.CurrentLanguage);
         UC_Builder = new EntityInstructionBuilder(() => f1.PreparePKM())
         {
@@ -94,7 +110,11 @@ public partial class SAV_Database : Form
                     return;
 
                 var pk = Results[index];
-                slot.AccessibleDescription = ShowdownParsing.GetLocalizedPreviewText(pk.Entity, Main.CurrentLanguage);
+
+                var x = Main.Settings;
+                var programLanguage = Language.GetLanguageValue(x.Startup.Language);
+                var settings = x.BattleTemplate.Hover.GetSettings(programLanguage, pk.Entity.Context);
+                slot.AccessibleDescription = ShowdownParsing.GetLocalizedPreviewText(pk.Entity, settings);
             };
         }
 
@@ -110,15 +130,16 @@ public partial class SAV_Database : Form
         // Load Data
         B_Search.Enabled = false;
         L_Count.Text = "Loading...";
-        var task = new Task(LoadDatabase);
+        var token = cts.Token;
+        var task = new Task(() => LoadDatabase(token), cts.Token);
         task.ContinueWith(z =>
         {
-            if (!z.IsFaulted)
+            if (token.IsCancellationRequested || !z.IsFaulted)
                 return;
             Invoke((MethodInvoker)(() => L_Count.Text = "Failed."));
-            if (z.Exception == null)
+            if (z.Exception is null)
                 return;
-            WinFormsUtil.Error("Loading database failed.", z.Exception.InnerException ?? new Exception(z.Exception.Message));
+            WinFormsUtil.Error("Loading database failed.", z.Exception.InnerException ?? z.Exception.GetBaseException());
         });
         task.Start();
 
@@ -131,19 +152,6 @@ public partial class SAV_Database : Form
         CenterToParent();
         Closing += (_, _) => ShowSet.Clear();
     }
-
-    private readonly PictureBox[] PKXBOXES;
-    private readonly string DatabasePath = Main.DatabasePath;
-    private List<SlotCache> Results = [];
-    private List<SlotCache> RawDB = [];
-    private int slotSelected = -1; // = null;
-    private Image? slotColor;
-    private const int RES_MIN = GridWidth * 1;
-    private const int RES_MAX = GridWidth * GridHeight;
-    private readonly string Counter;
-    private readonly string Viewed;
-    private const int MAXFORMAT = PKX.Generation;
-    private readonly SummaryPreviewer ShowSet = new();
 
     private void ClickView(object sender, EventArgs e)
     {
@@ -158,11 +166,22 @@ public partial class SAV_Database : Form
         if (sender == mnu)
             mnu.Hide();
 
+        var slot = Results[index];
+        var temp = slot.Entity;
+        var pk = EntityConverter.ConvertToType(temp, SAV.PKMType, out var c);
+        if (pk is null)
+        {
+            WinFormsUtil.Error(c.GetDisplayString(temp, SAV.PKMType));
+            return;
+        }
+        SAV.AdaptToSaveFile(pk);
+        pk.RefreshChecksum();
+        PKME_Tabs.PopulateFields(pk, false);
+
         slotSelected = index;
         slotColor = SpriteUtil.Spriter.View;
         FillPKXBoxes(SCR_Box.Value);
-        L_Viewed.Text = string.Format(Viewed, Results[index].Identify());
-        PKME_Tabs.PopulateFields(Results[index].Entity, false);
+        L_Viewed.Text = string.Format(Viewed, slot.Identify());
     }
 
     private void ClickDelete(object sender, EventArgs e)
@@ -360,7 +379,7 @@ public partial class SAV_Database : Form
         public bool IgnoreBackupFiles { get; } = ignoreBackupFiles;
     }
 
-    private void LoadDatabase()
+    private void LoadDatabase(CancellationToken token)
     {
         var settings = Main.Settings;
         var otherPaths = new List<SearchFolderDetail>();
@@ -369,7 +388,9 @@ public partial class SAV_Database : Form
         if (settings.EntityDb.SearchBackups)
             otherPaths.Add(new SearchFolderDetail(Main.BackupPath, false));
 
-        RawDB = LoadPKMSaves(DatabasePath, SAV, otherPaths, settings.EntityDb.SearchExtraSavesDeep);
+        RawDB = LoadEntitiesFromFolder(DatabasePath, SAV, otherPaths, settings.EntityDb.SearchExtraSavesDeep, token);
+        if (token.IsCancellationRequested)
+            return;
 
         // Load stats for pk who do not have any
         foreach (var entry in RawDB)
@@ -381,22 +402,24 @@ public partial class SAV_Database : Form
         try
         {
             while (!IsHandleCreated) { }
+            if (cts.Token.IsCancellationRequested)
+                return;
             BeginInvoke(new MethodInvoker(() => SetResults(RawDB)));
         }
         catch { /* Window Closed? */ }
     }
 
-    private static List<SlotCache> LoadPKMSaves(string pkmdb, SaveFile sav, List<SearchFolderDetail> otherPaths, bool otherDeep)
+    private static List<SlotCache> LoadEntitiesFromFolder(string databaseFolder, SaveFile sav, List<SearchFolderDetail> otherPaths, bool otherDeep, CancellationToken token)
     {
         var dbTemp = new ConcurrentBag<SlotCache>();
         var extensions = new HashSet<string>(EntityFileExtension.GetExtensionsAll().Select(z => $".{z}"));
 
-        var files = Directory.EnumerateFiles(pkmdb, "*", SearchOption.AllDirectories);
+        var files = Directory.EnumerateFiles(databaseFolder, "*", SearchOption.AllDirectories);
         Parallel.ForEach(files, file => SlotInfoLoader.AddFromLocalFile(file, dbTemp, sav, extensions));
 
         foreach (var folder in otherPaths)
         {
-            if (!SaveUtil.GetSavesFromFolder(folder.Path, otherDeep, out IEnumerable<string> paths, folder.IgnoreBackupFiles))
+            if (!SaveUtil.GetSavesFromFolder(token, folder.Path, otherDeep, out var paths, folder.IgnoreBackupFiles))
                 continue;
 
             Parallel.ForEach(paths, file => TryAddPKMsFromSaveFilePath(dbTemp, file));
@@ -409,8 +432,8 @@ public partial class SAV_Database : Form
 
         if (Main.Settings.EntityDb.FilterUnavailableSpecies)
         {
-            var filter = GetFilterForSaveFile(sav);
-            if (filter != null)
+            var filter = EntityPresenceFilters.GetFilterEntity(sav.Context);
+            if (filter is not null)
                 result.RemoveAll(z => !filter(z.Entity));
         }
 
@@ -424,19 +447,10 @@ public partial class SAV_Database : Form
         return result;
     }
 
-    private static Func<PKM, bool>? GetFilterForSaveFile(SaveFile sav) => sav switch
-    {
-        SAV8SWSH => static pk => pk is PK8 || PersonalTable.SWSH.IsPresentInGame(pk.Species, pk.Form),
-        SAV8BS   => static pk => pk is PB8 || PersonalTable.BDSP.IsPresentInGame(pk.Species, pk.Form),
-        SAV8LA   => static pk => pk is PA8 || PersonalTable.LA.IsPresentInGame(pk.Species, pk.Form),
-        SAV9SV   => static pk => pk is PK9 || PersonalTable.SV.IsPresentInGame(pk.Species, pk.Form),
-        _ => null,
-    };
-
     private static void TryAddPKMsFromSaveFilePath(ConcurrentBag<SlotCache> dbTemp, string file)
     {
         var sav = SaveUtil.GetVariantSAV(file);
-        if (sav == null)
+        if (sav is null)
         {
             if (FileUtil.TryGetMemoryCard(file, out var mc))
                 TryAddPKMsFromMemoryCard(dbTemp, mc, file);
@@ -500,11 +514,11 @@ public partial class SAV_Database : Form
 
     private void Menu_Import_Click(object sender, EventArgs e)
     {
-        if (!BoxView.GetBulkImportSettings(out var clearAll, out var overwrite, out var noSetb))
+        if (!BoxView.GetBulkImportSettings(out var clearAll, out var overwrite, out var settings))
             return;
 
         int box = BoxView.Box.CurrentBox;
-        int ctr = SAV.LoadBoxes(Results.Select(z => z.Entity), out var result, box, clearAll, overwrite, noSetb);
+        int ctr = SAV.LoadBoxes(Results.Select(z => z.Entity), out var result, box, clearAll, overwrite, settings);
         if (ctr <= 0)
             return;
 

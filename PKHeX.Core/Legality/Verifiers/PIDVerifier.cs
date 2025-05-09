@@ -39,7 +39,10 @@ public sealed class PIDVerifier : Verifier
             // Gen4 Eggs are "egg available" based on the stored PID value in the save file.
             // If this value is 0 or is generated as 0 (possible), the game will see "false" and no egg is available.
             // Only a non-zero value is possible to obtain.
-            data.AddLine(GetInvalid(LPIDEncryptZero, CheckIdentifier.EC));
+            // However, With Masuda Method, the egg PID is re-rolled with the ARNG (until shiny, at most 4 times) upon receipt.
+            // None of the un-rolled states share the same shiny-xor as PID=0, you can re-roll into an all-zero PID.
+            // Flag it as fishy, because more often than not, it is hacked rather than a legitimately obtained egg.
+            data.AddLine(Get(LPIDEncryptZero, Severity.Fishy, CheckIdentifier.EC));
             return;
         }
 
@@ -127,7 +130,7 @@ public sealed class PIDVerifier : Verifier
             return; // Evolved, don't need to calculate the final evolution for the verbose report.
 
         // Indicate the evolution for the user.
-        const EntityContext mostRecent = PKX.Context; // latest ec100 form here
+        const EntityContext mostRecent = Latest.Context; // latest ec100 form here
         uint evoVal = pk.EncryptionConstant % 100;
         bool rare = evoVal == 0;
         var (species, form) = EvolutionRestrictions.GetEvolvedSpeciesFormEC100(encSpecies, rare);
@@ -212,28 +215,14 @@ public sealed class PIDVerifier : Verifier
     private static void VerifyTransferEC(LegalityAnalysis data)
     {
         var pk = data.Entity;
-        // When transferred to Generation 6, the Encryption Constant is copied from the PID.
-        // The PID is then checked to see if it becomes shiny with the new Shiny rules (>>4 instead of >>3)
-        // If the PID is nonshiny->shiny, the top bit is flipped.
 
         // Check to see if the PID and EC are properly configured.
-        var bitFlipProc = GetExpectedTransferPID(pk, out var expect);
-        bool valid = pk.PID == expect;
-        if (valid)
+        var expect = PK5.GetTransferPID(pk.EncryptionConstant, pk.ID32, out var bitFlipProc);
+        if (pk.PID == expect)
             return;
 
         var msg = bitFlipProc ? LTransferPIDECBitFlip : LTransferPIDECEquals;
         data.AddLine(GetInvalid(msg, CheckIdentifier.EC));
-    }
-
-    private static bool GetExpectedTransferPID(PKM pk, out uint expect)
-    {
-        var ec = pk.EncryptionConstant; // should be original PID
-        var tmp = ec ^ pk.ID32;
-        var xor = tmp ^ (tmp >> 16);
-        bool xorPID = (xor & 0xFFF8u) == 8;
-        expect = (xorPID ? (ec ^ 0x80000000) : ec);
-        return xorPID;
     }
 
     private static bool IsEggBitRequiredMale34(ReadOnlySpan<MoveResult> moves)

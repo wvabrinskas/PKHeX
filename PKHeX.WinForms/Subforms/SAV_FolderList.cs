@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using PKHeX.Core;
@@ -19,23 +20,27 @@ public partial class SAV_FolderList : Form
     private readonly SortableBindingList<SavePreview> Recent;
     private readonly SortableBindingList<SavePreview> Backup;
     private readonly List<Label> TempTranslationLabels = [];
+    private readonly CancellationTokenSource cts = new(TimeSpan.FromSeconds(20));
 
     public SAV_FolderList(Action<SaveFile> openSaveFile)
     {
         InitializeComponent();
+        FormClosing += (_, _) => cts.Cancel();
         OpenSaveFile = openSaveFile;
 
+        var backups = Main.BackupPath;
         var drives = Environment.GetLogicalDrives();
-        Paths = GetPathList(drives);
+        Paths = GetPathList(drives, backups);
 
         dgDataRecent.ContextMenuStrip = GetContextMenu(dgDataRecent);
         dgDataBackup.ContextMenuStrip = GetContextMenu(dgDataBackup);
         dgDataRecent.Sorted += (_, _) => GetFilterText(dgDataRecent);
         dgDataBackup.Sorted += (_, _) => GetFilterText(dgDataBackup);
 
-        var extra = Paths.Select(z => z.Path).Where(z => z != Main.BackupPath).Distinct();
-        var backup = SaveFinder.GetSaveFiles(drives, false, [Main.BackupPath], false);
-        var recent = SaveFinder.GetSaveFiles(drives, false, extra, true).ToList();
+        var token = cts.Token;
+        var extra = Paths.Select(z => z.Path).Where(z => z != backups).Distinct();
+        var backup = SaveFinder.GetSaveFiles(drives, false, [backups], false, token);
+        var recent = SaveFinder.GetSaveFiles(drives, false, extra, true, token).ToList();
         var loaded = Main.Settings.Startup.RecentlyLoaded
             .Where(z => recent.All(x => x.Metadata.FilePath != z))
             .Where(File.Exists).Select(SaveUtil.GetVariantSAV).OfType<SaveFile>();
@@ -76,12 +81,12 @@ public partial class SAV_FolderList : Form
         CenterToParent();
     }
 
-    private static List<INamedFolderPath> GetPathList(IReadOnlyList<string> drives)
+    private static List<INamedFolderPath> GetPathList(IReadOnlyList<string> drives, string backupPath)
     {
         List<INamedFolderPath> locs =
         [
-            new CustomFolderPath(Main.BackupPath, display: "PKHeX Backups"),
-            ..GetUserPaths(), ..GetConsolePaths(drives), ..GetSwitchPaths(drives),
+            new CustomFolderPath(backupPath, display: "PKHeX Backups"),
+            ..GetUserPaths(), ..GetPaths3DS(drives), ..GetPathsSwitch(drives),
         ];
         var filtered = locs
             .DistinctBy(z => z.Path)
@@ -122,47 +127,47 @@ public partial class SAV_FolderList : Form
     private static IEnumerable<CustomFolderPath> GetUserPaths()
     {
         var paths = Main.Settings.Backup.OtherBackupPaths;
-        return paths.Select(x => new CustomFolderPath(x, true));
+        return paths.Select(x => new CustomFolderPath(x, FolderPathGroup.Custom));
     }
 
-    private static IEnumerable<CustomFolderPath> GetConsolePaths(IEnumerable<string> drives)
+    private static IEnumerable<CustomFolderPath> GetPaths3DS(IEnumerable<string> drives)
     {
         var path3DS = SaveFinder.Get3DSLocation(drives);
-        if (path3DS == null)
+        if (path3DS is null)
             return [];
 
         var root = Path.GetPathRoot(path3DS);
-        if (root == null)
+        if (root is null)
             return [];
 
         var paths = SaveFinder.Get3DSBackupPaths(root);
-        return paths.Select(z => new CustomFolderPath(z));
+        return paths.Select(z => new CustomFolderPath(z, FolderPathGroup.Nintendo3DS));
     }
 
-    private static IEnumerable<CustomFolderPath> GetSwitchPaths(IEnumerable<string> drives)
+    private static IEnumerable<CustomFolderPath> GetPathsSwitch(IEnumerable<string> drives)
     {
         var pathNX = SaveFinder.GetSwitchLocation(drives);
-        if (pathNX == null)
+        if (pathNX is null)
             return [];
 
         var root = Path.GetPathRoot(pathNX);
-        if (root == null)
+        if (root is null)
             return [];
 
         var paths = SaveFinder.GetSwitchBackupPaths(root);
-        return paths.Select(z => new CustomFolderPath(z));
+        return paths.Select(z => new CustomFolderPath(z, FolderPathGroup.NintendoSwitch));
     }
 
     private sealed record CustomFolderPath : INamedFolderPath
     {
         public string Path { get; }
         public string DisplayText { get; }
-        public bool Custom { get; }
+        public FolderPathGroup Group { get; }
 
-        public CustomFolderPath(string path, bool custom = false, string? display = null)
+        public CustomFolderPath(string path, FolderPathGroup group = 0, string? display = null)
         {
             Path = path;
-            Custom = custom;
+            Group = group;
             DisplayText = display ?? ResolveFolderName(path);
         }
 
@@ -204,7 +209,7 @@ public partial class SAV_FolderList : Form
     private void ClickOpenFile(DataGridView dgv)
     {
         var sav = GetSaveFile(dgv);
-        if (sav == null || !File.Exists(sav.FilePath))
+        if (sav is null || !File.Exists(sav.FilePath))
         {
             WinFormsUtil.Alert(MsgFileLoadFail);
             return;
@@ -216,7 +221,7 @@ public partial class SAV_FolderList : Form
     private void ClickOpenFolder(DataGridView dgv)
     {
         var sav = GetSaveFile(dgv);
-        if (sav == null || !File.Exists(sav.FilePath))
+        if (sav is null || !File.Exists(sav.FilePath))
         {
             WinFormsUtil.Alert(MsgFileLoadFail);
             return;
@@ -388,7 +393,7 @@ public partial class SAV_FolderList : Form
         }
         var cell = row.Cells[column];
         var value = cell.Value?.ToString();
-        if (value == null)
+        if (value is null)
         {
             row.Visible = false;
             return;

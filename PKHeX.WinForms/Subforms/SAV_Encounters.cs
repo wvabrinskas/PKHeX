@@ -165,7 +165,15 @@ public partial class SAV_Encounters : Form
         var enc = Results[index];
         var criteria = GetCriteria(enc, Main.Settings.EncounterDb);
         var trainer = Trainers.GetTrainer(enc.Version, enc.Generation <= 2 ? (LanguageID)SAV.Language : null) ?? SAV;
-        var pk = enc.ConvertToPKM(trainer, criteria);
+        var temp = enc.ConvertToPKM(trainer, criteria);
+        var pk = EntityConverter.ConvertToType(temp, SAV.PKMType, out var c);
+        if (pk is null)
+        {
+            WinFormsUtil.Error(c.GetDisplayString(temp, SAV.PKMType));
+            return;
+        }
+
+        SAV.AdaptToSaveFile(pk);
         pk.RefreshChecksum();
         PKME_Tabs.PopulateFields(pk, false);
         slotSelected = index;
@@ -256,31 +264,20 @@ public partial class SAV_Encounters : Form
         var versions = settings.GetVersions(SAV);
         var species = settings.Species == 0 ? GetFullRange(SAV.MaxSpeciesID) : [settings.Species];
         var results = GetAllSpeciesFormEncounters(species, SAV.Personal, versions, moves, pk, token);
-        if (settings.SearchEgg != null)
+        if (settings.SearchEgg is not null)
             results = results.Where(z => z.IsEgg == settings.SearchEgg);
-        if (settings.SearchShiny != null)
+        if (settings.SearchShiny is not null)
             results = results.Where(z => z.IsShiny == settings.SearchShiny);
 
         // return filtered results
         var comparer = new ReferenceComparer<IEncounterInfo>();
         results = results.Distinct(comparer); // only distinct objects
 
-        static Func<IEncounterInfo, bool> IsPresent<TTable>(TTable pt) where TTable : IPersonalTable => z =>
-        {
-            if (pt.IsPresentInGame(z.Species, z.Form))
-                return true;
-            return z is IEncounterFormRandom { IsRandomUnspecificForm: true } && pt.IsSpeciesInGame(z.Species);
-        };
         if (Main.Settings.EncounterDb.FilterUnavailableSpecies)
         {
-            results = SAV switch
-            {
-                SAV9SV s9 => results.Where(IsPresent(s9.Personal)),
-                SAV8SWSH s8 => results.Where(IsPresent(s8.Personal)),
-                SAV8BS b8 => results.Where(IsPresent(b8.Personal)),
-                SAV8LA a8 => results.Where(IsPresent(a8.Personal)),
-                _ => results.Where(z => z.Generation <= 7),
-            };
+            var filter = EntityPresenceFilters.GetFilterGeneric<IEncounterInfo>(SAV.Context);
+            if (filter != null)
+                results = results.Where(filter);
         }
 
         if (token.IsCancellationRequested)
@@ -333,9 +330,9 @@ public partial class SAV_Encounters : Form
     {
         public bool Equals(T? x, T? y)
         {
-            if (x == null)
+            if (x is null)
                 return false;
-            if (y == null)
+            if (y is null)
                 return false;
             return RuntimeHelpers.GetHashCode(x).Equals(RuntimeHelpers.GetHashCode(y));
         }

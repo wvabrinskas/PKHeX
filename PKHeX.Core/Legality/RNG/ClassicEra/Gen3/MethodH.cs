@@ -2,11 +2,12 @@ using System.Runtime.CompilerServices;
 using static PKHeX.Core.MethodHCondition;
 using static PKHeX.Core.LeadRequired;
 using static PKHeX.Core.SlotType3;
+using System;
 
 namespace PKHeX.Core;
 
 /// <summary>
-/// Method H logic used by mainline <see cref="GameVersion.Gen3"/> RNG.
+/// Method H logic used by mainline <see cref="EntityContext.Gen3"/> RNG.
 /// </summary>
 public static class MethodH
 {
@@ -603,7 +604,7 @@ public static class MethodH
 
     private static bool IsOriginalLevelValid(byte min, byte max, byte format, uint level)
     {
-        if (format == Format)
+        if (format == Format && min > 1)
             return level == min; // Met Level matches
         return LevelRangeExtensions.IsLevelWithinRange((int)level, min, max);
     }
@@ -675,4 +676,40 @@ public static class MethodH
         or Good_Rod
         or Super_Rod
         or SwarmFish50;
+
+    /// <summary>
+    /// Get the first possible starting seed that generates the given trainer ID and secret ID.
+    /// </summary>
+    /// <param name="tid">Generation 3 Trainer ID</param>
+    /// <param name="sid">Generation 3 Secret ID</param>
+    /// <param name="seed">Possible starting seed</param>
+    /// <returns>True if a seed was found, false if no seed was found</returns>
+    public static bool TryGetSeedTrainerID(ushort tid, ushort sid, out uint seed)
+    {
+        Span<uint> seeds = stackalloc uint[LCRNG.MaxCountSeedsPID];
+        var count = LCRNGReversal.GetSeeds(seeds, (uint)sid << 16, (uint)tid << 16);
+
+        if (count == 0)
+        {
+            seed = 0;
+            return false;
+        }
+        seed = seeds[0];
+        return true;
+    }
+
+    public static bool TryGetShinySID(ushort tid, out ushort sid, uint xor, uint bits = 0)
+    {
+        for (int i = 0; i < 8; i++, bits++)
+        {
+            var newSID = (ushort)(xor ^ (bits & 7));
+            if (!TryGetSeedTrainerID(tid, newSID, out _))
+                continue;
+            sid = newSID;
+            return true;
+        }
+        sid = 0;
+        return false;
+    }
+
 }

@@ -6,7 +6,7 @@ using static System.Buffers.Binary.BinaryPrimitives;
 namespace PKHeX.Core;
 
 /// <summary>
-/// Generation 8 <see cref="SaveFile"/> object for <see cref="GameVersion.BDSP"/> games.
+/// Generation 8 <see cref="SaveFile"/> object for <see cref="EntityContext.Gen8b"/> games.
 /// </summary>
 public sealed class SAV8BS : SaveFile, ISaveFileRevision, ITrainerStatRecord, IEventWorkArray<int>, IBoxDetailName, IBoxDetailWallpaper, IDaycareStorage, IDaycareEggState, IDaycareRandomState<ulong>
 {
@@ -312,9 +312,9 @@ public sealed class SAV8BS : SaveFile, ISaveFileRevision, ITrainerStatRecord, IE
         pb8.UpdateHandler(this);
 
         pb8.RefreshChecksum();
-        if (SetUpdateRecords != PKMImportSetting.Skip)
-            AddCountAcquired(pk);
     }
+
+    protected override void SetRecord(PKM pk) => AddCountAcquired(pk);
 
     private void AddCountAcquired(PKM pk)
     {

@@ -26,14 +26,17 @@ public sealed class MiscVerifier : Verifier
 
             switch (pk)
             {
-                case PK5 pk5 when pk5.PokeStarFame != 0 && pk5.IsEgg:
+                case SK2 or CK3 or XK3 or BK4 or RK4 or PA8: // Side Game: No Eggs
+                    data.AddLine(GetInvalid(LTransferEggVersion, Egg));
+                    break;
+                case PK5 pk5 when pk5.PokeStarFame != 0:
                     data.AddLine(GetInvalid(LEggShinyPokeStar, Egg));
                     break;
-                case PK4 pk4 when pk4.ShinyLeaf != 0:
-                    data.AddLine(GetInvalid(LEggShinyLeaf, Egg));
-                    break;
-                case PK4 pk4 when pk4.PokeathlonStat != 0:
-                    data.AddLine(GetInvalid(LEggPokeathlon, Egg));
+                case PK4 pk4:
+                    if (pk4.ShinyLeaf != 0)
+                        data.AddLine(GetInvalid(LEggShinyLeaf, Egg));
+                    if (pk4.PokeathlonStat != 0)
+                        data.AddLine(GetInvalid(LEggPokeathlon, Egg));
                     break;
                 case PK3 when pk.Language != 1:  // All Eggs are Japanese and flagged specially for localized string
                     data.AddLine(GetInvalid(string.Format(LOTLanguage, LanguageID.Japanese, (LanguageID)pk.Language), Egg));
@@ -46,6 +49,9 @@ public sealed class MiscVerifier : Verifier
 
         switch (pk)
         {
+            case SK2 sk2:
+                VerifyIsMovesetAllowed(data, sk2);
+                break;
             case PK5 pk5:
                 VerifyGen5Stats(data, pk5);
                 break;
@@ -73,18 +79,18 @@ public sealed class MiscVerifier : Verifier
             VerifyFullness(data, pk);
 
         var enc = data.EncounterMatch;
-        if (enc is IEncounterServerDate { IsDateRestricted: true } serverGift)
+        if (enc is IEncounterServerDate { IsDateRestricted: true } encounterDate)
         {
-            var date = new DateOnly(pk.MetYear + 2000, pk.MetMonth, pk.MetDay);
+            var actualDay = new DateOnly(pk.MetYear + 2000, pk.MetMonth, pk.MetDay);
 
             // HOME Gifts for Sinnoh/Hisui starters were forced JPN until May 20, 2022 (UTC).
             if (enc is WB8 { IsDateLockJapanese: true } or WA8 { IsDateLockJapanese: true })
             {
-                if (date < new DateOnly(2022, 5, 20) && pk.Language != (int)LanguageID.Japanese)
+                if (actualDay < new DateOnly(2022, 5, 20) && pk.Language != (int)LanguageID.Japanese)
                     data.AddLine(GetInvalid(LDateOutsideDistributionWindow));
             }
 
-            var result = serverGift.IsValidDate(date);
+            var result = encounterDate.IsWithinDistributionWindow(actualDay);
             if (result == EncounterServerDateCheck.Invalid)
                 data.AddLine(GetInvalid(LDateOutsideDistributionWindow));
         }
@@ -162,6 +168,36 @@ public sealed class MiscVerifier : Verifier
         // Check for Scale
         if (pk is IScaledSize3 s3 && IsHeightScaleMatchRequired(pk) && s2.HeightScalar != s3.Scale)
             data.AddLine(GetInvalid(LStatIncorrectHeightValue));
+    }
+
+    private void VerifyIsMovesetAllowed(LegalityAnalysis data, SK2 sk2)
+    {
+        Span<ushort> moves = stackalloc ushort[4];
+        sk2.GetMoves(moves);
+        Span<bool> flags = stackalloc bool[4];
+
+        if (sk2.Species is (ushort)Species.Smeargle)
+        {
+            if (LearnsetStadium.ValidateSmeargle(moves, flags))
+                return;
+        }
+        else
+        {
+            var learn = LearnSource2Stadium.Instance.GetLearnsetStadium(sk2.Species, sk2.Form);
+            if (learn.Validate(moves, sk2.CurrentLevel, flags))
+                return;
+        }
+
+        var parse = data.Info.Moves;
+        for (int i = 0; i < flags.Length; i++)
+        {
+            if (!flags[i])
+                continue;
+            ref var m = ref parse[i];
+            if (!m.Valid)
+                continue;
+            m = m with { Info = m.Info with { Method = LearnMethod.Unobtainable, Environment = LearnEnvironment.Stadium2 } };
+        }
     }
 
     private static void VerifyGen5Stats(LegalityAnalysis data, PK5 pk5)
@@ -632,17 +668,64 @@ public sealed class MiscVerifier : Verifier
         VerifyAbsoluteSizes(data, pb7);
         if (pb7.Stat_CP != pb7.CalcCP && !IsStarterLGPE(pb7))
             data.AddLine(GetInvalid(LStatIncorrectCP, Encounter));
+
+        if (pb7.ReceivedTime is null)
+            data.AddLine(GetInvalid(LDateTimeClockInvalid, Misc));
+
+        // HOME moving in and out will retain received date. ensure it matches if no HT data present.
+        // Go Park captures will have different dates, as the GO met date is retained as Met Date.
+        if (pb7.ReceivedDate is not { } date || !EncounterDate.IsValidDateSwitch(date) || (pb7.IsUntraded && data.EncounterOriginal is not EncounterSlot7GO && date != pb7.MetDate))
+            data.AddLine(GetInvalid(LDateOutsideConsoleWindow, Misc));
     }
 
-    private static void VerifyAbsoluteSizes(LegalityAnalysis data, IScaledSizeValue obj)
+    private static void VerifyAbsoluteSizes<T>(LegalityAnalysis data, T obj) where T : IScaledSizeValue
     {
-        // ReSharper disable once CompareOfFloatsByEqualityOperator -- THESE MUST MATCH EXACTLY
+        if (obj is PB7 pb7 && data.EncounterMatch is WB7 { IsHeightWeightFixed: true } enc)
+            VerifyFixedSizes(data, pb7, enc);
+        else if (obj is PA8 { Scale: 255 } pa8 && data.EncounterMatch is EncounterStatic8a { IsAlpha: true, HeightScalar: 127, WeightScalar: 127 })
+            VerifyFixedSizeMidAlpha(data, pa8);
+        else
+            VerifyCalculatedSizes(data, obj);
+    }
+
+    // ReSharper disable CompareOfFloatsByEqualityOperator -- THESE MUST MATCH EXACTLY
+    private static void VerifyFixedSizes<T>(LegalityAnalysis data, T obj, WB7 enc) where T : IScaledSizeValue
+    {
+        // Unlike PLA, there is no way to force it to recalculate in-game.
+        // The only encounter this applies to is Meltan, which cannot reach PLA for recalculation.
+        if (obj.HeightAbsolute != enc.GetHomeHeightAbsolute())
+            data.AddLine(GetInvalid(LStatIncorrectHeight, Encounter));
+        if (obj.WeightAbsolute != enc.GetHomeWeightAbsolute())
+            data.AddLine(GetInvalid(LStatIncorrectWeight, Encounter));
+    }
+
+    private static void VerifyFixedSizeMidAlpha(LegalityAnalysis data, PA8 pk)
+    {
+        // HOME 3.0.1+ fixes the Height/Weight to 255, but doesn't update the float calculated sizes.
+        // Putting it in party and putting it back in box did trigger them to update, so it can legally be two states:
+        // Mutated (255 with 127-based-floats), or Updated (255 with 255-based-floats)
+        // Since most players won't be triggering an update, it is more likely that it is only mutated.
+        // Check for mutated first. If not matching mutated, must match updated.
+        var pi = pk.PersonalInfo;
+        var mutHeight = PA8.GetHeightAbsolute(pi, 127);
+        if (pk.HeightAbsolute == mutHeight)
+        {
+            var mutWeight = PA8.GetWeightAbsolute(pi, 127, 127);
+            if (pk.WeightAbsolute == mutWeight)
+                return;
+        }
+        // Since it does not match the mutated state, it must be the updated state (255 + matching floats)
+        VerifyCalculatedSizes(data, pk);
+    }
+
+    private static void VerifyCalculatedSizes<T>(LegalityAnalysis data, T obj) where T : IScaledSizeValue
+    {
         if (obj.HeightAbsolute != obj.CalcHeightAbsolute)
             data.AddLine(GetInvalid(LStatIncorrectHeight, Encounter));
-        // ReSharper disable once CompareOfFloatsByEqualityOperator -- THESE MUST MATCH EXACTLY
         if (obj.WeightAbsolute != obj.CalcWeightAbsolute)
             data.AddLine(GetInvalid(LStatIncorrectWeight, Encounter));
     }
+    // ReSharper restore CompareOfFloatsByEqualityOperator
 
     private static bool IsStarterLGPE<T>(T pk) where T : ISpeciesForm => pk switch
     {

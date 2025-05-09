@@ -7,6 +7,7 @@ using System.IO;
 using System.Linq;
 using System.Media;
 using System.Runtime.InteropServices;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
@@ -300,7 +301,7 @@ public partial class Main : Form
     private void MainMenuOpen(object sender, EventArgs e)
     {
         if (WinFormsUtil.OpenSAVPKMDialog(C_SAV.SAV.PKMExtensions, out var path))
-            OpenQuick(path!);
+            OpenQuick(path);
     }
 
     private void MainMenuSave(object sender, EventArgs e)
@@ -436,9 +437,9 @@ public partial class Main : Form
         SpriteBuilderUtil.SpriterPreference = settings.Sprite.SpritePreference;
 
         var write = settings.SlotWrite;
-        SaveFile.SetUpdateDex = write.SetUpdateDex ? PKMImportSetting.Update : PKMImportSetting.Skip;
-        SaveFile.SetUpdatePKM = write.SetUpdatePKM ? PKMImportSetting.Update : PKMImportSetting.Skip;
-        SaveFile.SetUpdateRecords = write.SetUpdateRecords ? PKMImportSetting.Update : PKMImportSetting.Skip;
+        SaveFile.SetUpdateDex = write.SetUpdateDex ? EntityImportOption.Enable : EntityImportOption.Disable;
+        SaveFile.SetUpdatePKM = write.SetUpdatePKM ? EntityImportOption.Enable : EntityImportOption.Disable;
+        SaveFile.SetUpdateRecords = write.SetUpdateRecords ? EntityImportOption.Enable : EntityImportOption.Disable;
 
         C_SAV.ModifyPKM = PKME_Tabs.ModifyPKM = settings.SlotWrite.SetUpdatePKM;
         CommonEdits.ShowdownSetIVMarkings = settings.Import.ApplyMarkings;
@@ -523,12 +524,15 @@ public partial class Main : Form
 
         // Get Simulator Data
         var text = Clipboard.GetText();
-        var set = new ShowdownSet(text);
+        var sets = BattleTemplateTeams.TryGetSets(text);
+        var set = sets.FirstOrDefault() ?? new(""); // take only first set
 
         if (set.Species == 0)
         { WinFormsUtil.Alert(MsgSimulatorFailClipboard); return; }
 
-        var reformatted = set.Text;
+        var programLanguage = Language.GetLanguageValue(Settings.Startup.Language);
+        var settings = Settings.BattleTemplate.Export.GetSettings(programLanguage, set.Context);
+        var reformatted = set.GetText(settings);
         if (DialogResult.Yes != WinFormsUtil.Prompt(MessageBoxButtons.YesNo, MsgSimulatorLoad, reformatted))
             return;
 
@@ -548,7 +552,9 @@ public partial class Main : Form
         }
 
         var pk = PreparePKM();
-        var text = ShowdownParsing.GetShowdownText(pk);
+        var programLanguage = Language.GetLanguageValue(Settings.Startup.Language);
+        var settings = Settings.BattleTemplate.Export.GetSettings(programLanguage, pk.Context);
+        var text = ShowdownParsing.GetShowdownText(pk, settings);
         bool success = WinFormsUtil.SetClipboardText(text);
         if (!success || !Clipboard.GetText().Equals(text))
             WinFormsUtil.Alert(MsgClipboardFailWrite, MsgSimulatorExportFail);
@@ -608,7 +614,7 @@ public partial class Main : Form
     private void OpenFile(byte[] input, string path, string ext)
     {
         var obj = FileUtil.GetSupportedFile(input, ext, C_SAV.SAV);
-        if (obj != null && LoadFile(obj, path))
+        if (obj is not null && LoadFile(obj, path))
             return;
 
         WinFormsUtil.Error(GetHintInvalidFile(input, path),
@@ -635,7 +641,7 @@ public partial class Main : Form
 
     private bool LoadFile(object? input, string path)
     {
-        if (input == null)
+        if (input is null)
             return false;
 
         switch (input)
@@ -661,12 +667,16 @@ public partial class Main : Form
 
     private bool OpenPKM(PKM pk)
     {
-        var destType = C_SAV.SAV.PKMType;
+        var sav = C_SAV.SAV;
+        var destType = sav.PKMType;
         var tmp = EntityConverter.ConvertToType(pk, destType, out var c);
         Debug.WriteLine(c.GetDisplayString(pk, destType));
-        if (tmp == null)
+        if (tmp is null)
             return false;
-        C_SAV.SAV.AdaptPKM(tmp);
+
+        var unconverted = ReferenceEquals(pk, tmp);
+        if (unconverted && sav is { State.Exportable: true })
+            sav.AdaptToSaveFile(tmp);
         PKME_Tabs.PopulateFields(tmp);
         return true;
     }
@@ -692,13 +702,13 @@ public partial class Main : Form
         var destType = C_SAV.SAV.PKMType;
         var pk = EntityConverter.ConvertToType(temp, destType, out var c);
 
-        if (pk == null)
+        if (pk is null)
         {
             WinFormsUtil.Alert(c.GetDisplayString(temp, destType));
             return true;
         }
 
-        C_SAV.SAV.AdaptPKM(pk);
+        C_SAV.SAV.AdaptToSaveFile(pk);
         PKME_Tabs.PopulateFields(pk);
         Debug.WriteLine(c);
         return true;
@@ -871,7 +881,8 @@ public partial class Main : Form
     {
 #if DEBUG
         // Get the file path that started this exe.
-        var date = File.GetLastWriteTime(Environment.ProcessPath!);
+        var path = Environment.ProcessPath;
+        var date = path is null ? DateTime.Now : File.GetLastWriteTime(path);
         string version = $"d-{date:yyyyMMdd}";
 #else
         var v = Program.CurrentVersion;
@@ -1175,7 +1186,7 @@ public partial class Main : Form
         pk ??= PreparePKM(false); // don't perform control loss click
 
         var menu = dragout.ContextMenuStrip;
-        if (menu != null)
+        if (menu is not null)
             menu.Enabled = pk.Species != 0 || HaX; // Species
 
         pb.Image = pk.Sprite(C_SAV.SAV);
@@ -1211,7 +1222,7 @@ public partial class Main : Form
             return;
         if (e.AllowedEffect == (DragDropEffects.Copy | DragDropEffects.Link)) // external file
             e.Effect = DragDropEffects.Copy;
-        else if (e.Data != null) // within
+        else if (e.Data is not null) // within
             e.Effect = DragDropEffects.Copy;
     }
 
@@ -1339,7 +1350,8 @@ public partial class Main : Form
     {
         try
         {
-            if (!SaveFinder.TryDetectSaveFile(out var sav))
+            var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            if (!SaveFinder.TryDetectSaveFile(cts.Token, out var sav))
                 return;
 
             var path = sav.Metadata.FilePath!;

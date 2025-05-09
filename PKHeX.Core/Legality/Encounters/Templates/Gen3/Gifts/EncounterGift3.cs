@@ -9,7 +9,7 @@ namespace PKHeX.Core;
 /// Generation 3 Event Gift
 /// </summary>
 public sealed record EncounterGift3 : IEncounterable, IEncounterMatch, IMoveset, IFatefulEncounterReadOnly,
-    IRibbonSetEvent3, IRandomCorrelationEvent3, IFixedTrainer, IMetLevel
+    IRibbonSetEvent3, IRandomCorrelationEvent3, IFixedTrainer, IMetLevel, IGenerateSeed32
 {
     public ushort Species { get; }
     public byte Form => 0;
@@ -213,6 +213,29 @@ public sealed record EncounterGift3 : IEncounterable, IEncounterMatch, IMoveset,
         }
     }
 
+    public bool GenerateSeed32(PKM pk, uint seed)
+    {
+        var pk3 = (PK3)pk;
+        if (Method is Channel)
+        {
+            seed = ChannelJirachi.SkipToPIDIV(seed);
+            PIDGenerator.SetValuesFromSeedChannel(pk3, seed);
+            return true;
+        }
+
+        uint idXor = pk.TID16 ^ (uint)pk.SID16;
+        pk3.PID = Shiny switch
+        {
+            Shiny.Never when Method is BACD_U_AX => GetAntishiny(ref seed, idXor),
+            Shiny.Never => GetRegularAntishiny(ref seed, idXor),
+            Shiny.Always => GetForceShiny(ref seed, idXor),
+            _ when Method is Method_2 => GetMethod2(ref seed),
+            _ => GetRegular(ref seed),
+        };
+        pk3.IV32 = PIDGenerator.GetIVsFromSeedSequentialLCRNG(ref seed);
+        return true;
+    }
+
     private static bool TrySetWishmkrShiny(PK3 pk, EncounterCriteria criteria)
     {
         bool filterIVs = criteria.IsSpecifiedIVsAny(out var count) && count <= 2;
@@ -246,6 +269,24 @@ public sealed record EncounterGift3 : IEncounterable, IEncounterMatch, IMoveset,
 
     private static uint SetPINGAChannel(PK3 pk, EncounterCriteria criteria)
     {
+        if (criteria.IsSpecifiedIVsAll())
+        {
+            Span<uint> seeds = stackalloc uint[XDRNG.MaxCountSeedsChannel];
+            var count = XDRNG.GetSeedsChannel(seeds, (uint)criteria.IV_HP, (uint)criteria.IV_ATK, (uint)criteria.IV_DEF, (uint)criteria.IV_SPA, (uint)criteria.IV_SPD, (uint)criteria.IV_SPE);
+            foreach (var seed in seeds[..count])
+            {
+                if (!ChannelJirachi.IsPossible(seed))
+                    continue;
+                PIDGenerator.SetValuesFromSeedChannel(pk, seed);
+                var pid = pk.EncryptionConstant;
+                if (criteria.IsSpecifiedNature() && !criteria.IsSatisfiedNature((Nature)(pid % 25)))
+                    continue; // try again
+                if (criteria.Shiny.IsShiny() != ShinyUtil.GetIsShiny(pk.ID32, pid, 8))
+                    continue; // try again
+                return seed;
+            }
+        }
+
         while (true)
         {
             uint seed = Util.Rand32();
@@ -291,7 +332,7 @@ public sealed record EncounterGift3 : IEncounterable, IEncounterMatch, IMoveset,
     {
         if (Language != 0)
             return (LanguageID) Language;
-        if (language < LanguageID.Korean && language != LanguageID.Hacked)
+        if (language < LanguageID.Korean && language != LanguageID.None)
         {
             if (Language == 0 && language is not LanguageID.Japanese)
                 return language;

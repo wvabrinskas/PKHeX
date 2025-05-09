@@ -4,7 +4,7 @@ using static PKHeX.Core.SlotType3;
 namespace PKHeX.Core;
 
 /// <summary>
-/// Encounter Slot found in <see cref="GameVersion.Gen3"/>.
+/// Encounter Slot found in <see cref="EntityContext.Gen3"/>.
 /// </summary>
 public record EncounterSlot3(EncounterArea3 Parent, ushort Species, byte Form, byte LevelMin, byte LevelMax, byte SlotNumber, byte MagnetPullIndex, byte MagnetPullCount, byte StaticIndex, byte StaticCount)
     : IEncounterable, IEncounterMatch, IEncounterConvertible<PK3>, IEncounterSlot3, IRandomCorrelation
@@ -38,8 +38,18 @@ public record EncounterSlot3(EncounterArea3 Parent, ushort Species, byte Form, b
 
     public PK3 ConvertToPKM(ITrainerInfo tr, EncounterCriteria criteria)
     {
-        int lang = (int)Language.GetSafeLanguage(Generation, (LanguageID)tr.Language);
-        var version = Version != GameVersion.RSE ? Version : GameVersion.RSE.Contains(tr.Version) ? tr.Version : GameVersion.E;
+        int language = (int)Language.GetSafeLanguage(Generation, (LanguageID)tr.Language);
+        var version = Version switch
+        {
+            GameVersion.RSE => tr.Version switch
+            {
+                GameVersion.R => GameVersion.R,
+                GameVersion.S => GameVersion.S,
+                GameVersion.RS => GameVersion.R,
+                _ => GameVersion.E,
+            },
+            _ => Version
+        };
         var pi = PersonalTable.E[Species];
         var pk = new PK3
         {
@@ -52,11 +62,11 @@ public record EncounterSlot3(EncounterArea3 Parent, ushort Species, byte Form, b
             Version = version,
             Ball = (byte)GetRequiredBall(Ball.Poke),
 
-            Language = lang,
+            Language = language,
             OriginalTrainerName = tr.OT,
             OriginalTrainerGender = tr.Gender,
             ID32 = tr.ID32,
-            Nickname = SpeciesName.GetSpeciesNameGeneration(Species, lang, Generation),
+            Nickname = SpeciesName.GetSpeciesNameGeneration(Species, language, Generation),
         };
 
         SetPINGA(pk, criteria, pi);
@@ -70,7 +80,7 @@ public record EncounterSlot3(EncounterArea3 Parent, ushort Species, byte Form, b
     {
         if (Species != (int)Core.Species.Unown)
         {
-            if (criteria.IsSpecifiedIVsAll() && this.SetFromIVs(pk, criteria))
+            if (criteria.IsSpecifiedIVsAll() && this.SetFromIVs(pk, pi, criteria, pk.E))
                 return;
             this.SetRandom(pk, pi, criteria, Util.Rand32());
         }
@@ -78,11 +88,11 @@ public record EncounterSlot3(EncounterArea3 Parent, ushort Species, byte Form, b
         {
             if (criteria.IsSpecifiedIVsAll() && this.SetFromIVsUnown(pk, criteria))
                 return;
-            this.SetRandomUnown(pk, criteria);
+            this.SetRandomUnown(pk, criteria, Util.Rand32());
         }
     }
 
-    protected virtual void SetEncounterMoves(PKM pk) => EncounterUtil.SetEncounterMoves(pk, Version, LevelMin);
+    protected virtual void SetEncounterMoves(PK3 pk) => EncounterUtil.SetEncounterMoves(pk, Version, LevelMin);
     #endregion
 
     #region Matching

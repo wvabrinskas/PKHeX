@@ -23,7 +23,8 @@ public sealed class BallVerifier : Verifier
     private static Ball IsReplacedBall(IVersion enc, PKM pk) => pk switch
     {
         // Trading from PLA origin -> SW/SH will replace the Legends: Arceus ball with a regular Poké Ball
-        PK8 when enc.Version == GameVersion.PLA => Poke,
+        // Enamorus is a special case where the ball is not replaced with a Poké Ball (it's a Cherish Ball)
+        PK8 when enc.Version == GameVersion.PLA && enc is not IFixedBall { FixedBall: (> 0 and < Strange) } => Poke,
 
         // No replacement done.
         _ => NoBallReplace,
@@ -159,11 +160,7 @@ public sealed class BallVerifier : Verifier
         if (ball > Beast)
             return BadOutOfRange;
 
-        // Paldea Starters: Only via GO (Adventures Abound)
         var species = enc.Species;
-        if (species is >= (int)Species.Sprigatito and <= (int)Species.Quaquaval)
-            return VerifyBallEquals(ball, BallUseLegality.WildPokeballs8g_WithoutRaid);
-
         var result = BallContextHOME.Instance.CanBreedWithBall(species, enc.Form, ball);
         return GetResult(result);
     }

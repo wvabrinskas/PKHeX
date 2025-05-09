@@ -5,8 +5,8 @@ namespace PKHeX.Core;
 /// <summary>
 /// Generation 4 Trade Encounter with a fixed PID value.
 /// </summary>
-public sealed record EncounterTrade4PID
-    : IEncounterable, IEncounterMatch, IFixedTrainer, IFixedNickname, IFixedIVSet, IEncounterConvertible<PK4>, IContestStatsReadOnly, IMoveset, IFixedGender, IFixedNature
+public sealed record EncounterTrade4PID : IEncounterable, IEncounterMatch, IEncounterConvertible<PK4>,
+    IFixedTrainer, IFixedNickname, IFixedIVSet, IContestStatsReadOnly, IMoveset, IFixedGender, IFixedNature, ITrainerID32ReadOnly
 {
     public byte Generation => 4;
     public EntityContext Context => EntityContext.Gen4;
@@ -39,7 +39,7 @@ public sealed record EncounterTrade4PID
 
     public Nature Nature => (Nature)(PID % 25);
     public byte Form => 0;
-    private uint ID32 => (uint)(TID16 | (SID16 << 16));
+    public uint ID32 => (uint)(TID16 | (SID16 << 16));
     private bool IsMetUnset => MetLocation == 0;
 
     /// <summary>
@@ -77,8 +77,8 @@ public sealed record EncounterTrade4PID
 
     public PK4 ConvertToPKM(ITrainerInfo tr, EncounterCriteria criteria)
     {
+        int language = (int)Language.GetSafeLanguage(Generation, (LanguageID)tr.Language);
         var version = this.GetCompatibleVersion(tr.Version);
-        int lang = (int)Language.GetSafeLanguage(Generation, (LanguageID)tr.Language, version);
         var pi = PersonalTable.DP[Species];
         var pk = new PK4
         {
@@ -94,14 +94,14 @@ public sealed record EncounterTrade4PID
 
             ID32 = ID32,
             Version = version,
-            Language = GetReceivedLanguage(lang, version),
+            Language = GetReceivedLanguage(language, version),
             OriginalTrainerGender = OTGender,
-            OriginalTrainerName = TrainerNames.Span[lang],
+            OriginalTrainerName = TrainerNames.Span[language],
 
             OriginalTrainerFriendship = pi.BaseFriendship,
 
             IsNicknamed = true,
-            Nickname = Nicknames.Span[lang],
+            Nickname = Nicknames.Span[language],
 
             HandlingTrainerName = tr.OT,
             HandlingTrainerGender = tr.Gender,

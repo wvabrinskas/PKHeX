@@ -34,14 +34,15 @@ public static class CommonEdits
     }
 
     /// <summary>
-    /// Clears the <see cref="PKM.Nickname"/> to the default value.
+    /// Sets the <see cref="PKM.Nickname"/> to the default value of the current species and language.
     /// </summary>
     /// <param name="pk">Pokémon to modify.</param>
+    /// <returns>Default nickname for the current species and language.</returns>
     public static string ClearNickname(this PKM pk)
     {
         pk.IsNicknamed = false;
         string nick = SpeciesName.GetSpeciesNameGeneration(pk.Species, pk.Language, pk.Format);
-        pk.Nickname = nick;
+        pk.SetString(pk.NicknameTrash, nick, nick.Length, StringConverterOption.None);
         if (pk is GBPKM pk12)
             pk12.SetNotNicknamed();
         return nick;
@@ -444,10 +445,12 @@ public static class CommonEdits
         return GameInfo.GetLocationName(eggmet, location, pk.Format, pk.Generation, pk.Version);
     }
 
+    public const char OptionNone = '\0';
+
     /// <summary>
     /// Gets a <see cref="PKM.EncryptionConstant"/> to match the requested option.
     /// </summary>
-    public static uint GetComplicatedEC(ISpeciesForm pk, char option = default)
+    public static uint GetComplicatedEC(ISpeciesForm pk, char option = OptionNone)
     {
         var species = pk.Species;
         var form = pk.Form;
@@ -455,7 +458,7 @@ public static class CommonEdits
     }
 
     /// <inheritdoc cref="GetComplicatedEC(ISpeciesForm,char)"/>
-    public static uint GetComplicatedEC(ushort species, byte form, char option = default)
+    public static uint GetComplicatedEC(ushort species, byte form, char option = OptionNone)
     {
         var rng = Util.Rand;
         uint rand = rng.Rand32();

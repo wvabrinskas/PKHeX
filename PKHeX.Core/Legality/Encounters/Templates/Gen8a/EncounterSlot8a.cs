@@ -8,7 +8,7 @@ namespace PKHeX.Core;
 /// <param name="AlphaType">0=Never, 1=Random, 2=Guaranteed</param>
 /// <param name="FlawlessIVCount"></param>
 public sealed record EncounterSlot8a(EncounterArea8a Parent, ushort Species, byte Form, byte LevelMin, byte LevelMax, byte AlphaType, byte FlawlessIVCount, Gender Gender)
-    : IEncounterable, IEncounterMatch, IEncounterConvertible<PA8>, IAlphaReadOnly, IMasteryInitialMoveShop8, IFlawlessIVCount, ISeedCorrelation64<PKM>
+    : IEncounterable, IEncounterMatch, IEncounterConvertible<PA8>, IAlphaReadOnly, IMasteryInitialMoveShop8, IFlawlessIVCount, ISeedCorrelation64<PKM>, IGenerateSeed64
 {
     public byte Generation => 8;
     public EntityContext Context => EntityContext.Gen8a;
@@ -36,11 +36,11 @@ public sealed record EncounterSlot8a(EncounterArea8a Parent, ushort Species, byt
     public PA8 ConvertToPKM(ITrainerInfo tr) => ConvertToPKM(tr, EncounterCriteria.Unrestricted);
     public PA8 ConvertToPKM(ITrainerInfo tr, EncounterCriteria criteria)
     {
-        int lang = (int)Language.GetSafeLanguage(Generation, (LanguageID)tr.Language);
+        int language = (int)Language.GetSafeLanguage(Generation, (LanguageID)tr.Language);
         var pi = PersonalTable.LA[Species, Form];
         var pk = new PA8
         {
-            Language = lang,
+            Language = language,
             Species = Species,
             Form = Form,
             CurrentLevel = LevelMin,
@@ -55,7 +55,7 @@ public sealed record EncounterSlot8a(EncounterArea8a Parent, ushort Species, byt
             OriginalTrainerGender = tr.Gender,
             ID32 = tr.ID32,
             OriginalTrainerFriendship = pi.BaseFriendship,
-            Nickname = SpeciesName.GetSpeciesNameGeneration(Species, lang, Generation),
+            Nickname = SpeciesName.GetSpeciesNameGeneration(Species, language, Generation),
         };
         SetPINGA(pk, criteria, pi);
         pk.Scale = pk.HeightScalar;
@@ -69,19 +69,28 @@ public sealed record EncounterSlot8a(EncounterArea8a Parent, ushort Species, byt
     private void SetPINGA(PA8 pk, EncounterCriteria criteria, PersonalInfo8LA pi)
     {
         var para = GetParams(pi);
+        bool checkLevel = criteria.IsSpecifiedLevelRange() && this.IsLevelWithinRange(criteria);
         while (true)
         {
             var (_, slotSeed) = Overworld8aRNG.ApplyDetails(pk, criteria, para, HasAlphaMove);
             if (this.IsRandomLevel())
             {
                 // Give a random level according to the RNG correlation.
-                var lvl = Overworld8aRNG.GetRandomLevel(slotSeed, LevelMin, LevelMax);
-                if (criteria.IsSpecifiedLevelRange() && !criteria.IsSatisfiedLevelRange(lvl))
+                var level = Overworld8aRNG.GetRandomLevel(slotSeed, LevelMin, LevelMax);
+                if (checkLevel && !criteria.IsSatisfiedLevelRange(level))
                     continue;
-                pk.MetLevel = pk.CurrentLevel = lvl;
+                pk.MetLevel = pk.CurrentLevel = level;
             }
             break;
         }
+    }
+
+    public void GenerateSeed64(PKM pk, ulong seed)
+    {
+        var criteria = EncounterCriteria.Unrestricted;
+        var pi = PersonalTable.LA.GetFormEntry(Species, Form);
+        var para = GetParams(pi);
+        _ = Overworld8aRNG.ApplyDetails(pk, criteria, para, HasAlphaMove);
     }
 
     private OverworldParam8a GetParams(PersonalInfo8LA pi) => new()
@@ -108,16 +117,15 @@ public sealed record EncounterSlot8a(EncounterArea8a Parent, ushort Species, byt
         _ => 0,
     });
 
-    private void SetEncounterMoves(PKM pk, int level)
+    private void SetEncounterMoves(PA8 pk, int level)
     {
-        var pa8 = (PA8)pk;
         Span<ushort> moves = stackalloc ushort[4];
         var (learn, mastery) = GetLevelUpInfo();
-        LoadInitialMoveset(pa8, moves, learn, level);
+        LoadInitialMoveset(pk, moves, learn, level);
         pk.SetMoves(moves);
-        pa8.SetEncounterMasteryFlags(moves, mastery, level);
-        if (pa8.AlphaMove != 0)
-            pa8.SetMasteryFlagMove(pa8.AlphaMove);
+        pk.SetEncounterMasteryFlags(moves, mastery, level);
+        if (pk.AlphaMove != 0)
+            pk.SetMasteryFlagMove(pk.AlphaMove);
     }
 
     public void LoadInitialMoveset(PA8 pa8, Span<ushort> moves, Learnset learn, int level)

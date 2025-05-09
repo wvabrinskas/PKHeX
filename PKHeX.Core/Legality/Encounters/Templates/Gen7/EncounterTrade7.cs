@@ -5,7 +5,8 @@ namespace PKHeX.Core;
 /// <summary>
 /// Generation 7 Trade Encounter
 /// </summary>
-public sealed record EncounterTrade7 : IEncounterable, IEncounterMatch, IFixedTrainer, IFixedNickname, IEncounterConvertible<PK7>, IMemoryOTReadOnly, IFixedGender, IFixedNature, IFixedIVSet
+public sealed record EncounterTrade7 : IEncounterable, IEncounterMatch, IEncounterConvertible<PK7>,
+    IFixedTrainer, IFixedNickname, IMemoryOTReadOnly, IFixedGender, IFixedNature, IFixedIVSet, ITrainerID32ReadOnly
 {
     public byte Generation => 7;
     public EntityContext Context => EntityContext.Gen7;
@@ -27,6 +28,8 @@ public sealed record EncounterTrade7 : IEncounterable, IEncounterMatch, IFixedTr
 
     public required Nature Nature { get; init; }
     public required uint ID32 { get; init; }
+    public ushort TID16 => (ushort)ID32;
+    public ushort SID16 => (ushort)(ID32 >> 16);
     public required AbilityPermission Ability { get; init; }
     public required byte Gender { get; init; }
     public required byte OTGender { get; init; }
@@ -61,10 +64,11 @@ public sealed record EncounterTrade7 : IEncounterable, IEncounterMatch, IFixedTr
 
     public PK7 ConvertToPKM(ITrainerInfo tr, EncounterCriteria criteria)
     {
+        int language = (int)Language.GetSafeLanguage(Generation, (LanguageID)tr.Language);
         var version = this.GetCompatibleVersion(tr.Version);
-        int lang = (int)Language.GetSafeLanguage(Generation, (LanguageID)tr.Language, version);
         var pi = PersonalTable.USUM[Species, Form];
         var rnd = Util.Rand;
+        var geo = tr.GetRegionOrigin(language);
         var pk = new PK7
         {
             PID = rnd.Rand32(),
@@ -81,9 +85,9 @@ public sealed record EncounterTrade7 : IEncounterable, IEncounterMatch, IFixedTr
 
             ID32 = ID32,
             Version = version,
-            Language = lang,
+            Language = language,
             OriginalTrainerGender = OTGender,
-            OriginalTrainerName = TrainerNames.Span[lang],
+            OriginalTrainerName = TrainerNames.Span[language],
 
             OriginalTrainerMemory = OriginalTrainerMemory,
             OriginalTrainerMemoryIntensity = OriginalTrainerMemoryIntensity,
@@ -92,17 +96,17 @@ public sealed record EncounterTrade7 : IEncounterable, IEncounterMatch, IFixedTr
             OriginalTrainerFriendship = pi.BaseFriendship,
 
             IsNicknamed = true,
-            Nickname = Nicknames.Span[lang],
+            Nickname = Nicknames.Span[language],
 
             HandlingTrainerName = tr.OT,
             HandlingTrainerGender = tr.Gender,
             CurrentHandler = 1,
             HandlingTrainerFriendship = pi.BaseFriendship,
+
+            ConsoleRegion = geo.ConsoleRegion,
+            Country = geo.Country,
+            Region = geo.Region,
         };
-        if (tr is IRegionOrigin r)
-            r.CopyRegionOrigin(pk);
-        else
-            pk.SetDefaultRegionOrigins(lang);
 
         EncounterUtil.SetEncounterMoves(pk, version, Level);
         if (pk.IsShiny)

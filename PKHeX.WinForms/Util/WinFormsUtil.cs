@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Drawing;
 using System.Globalization;
 using System.IO;
@@ -23,7 +24,7 @@ public static class WinFormsUtil
     /// </summary>
     internal static void CenterToForm(this Control child, Control? parent)
     {
-        if (parent == null)
+        if (parent is null)
             return;
         int x = parent.Location.X + ((parent.Width - child.Width) / 2);
         int y = parent.Location.Y + ((parent.Height - child.Height) / 2);
@@ -49,7 +50,7 @@ public static class WinFormsUtil
             if (aParent is T t)
                 return t;
 
-            if (aParent.Parent != null)
+            if (aParent.Parent is not null)
                 aParent = aParent.Parent;
             else
                 return null;
@@ -79,7 +80,7 @@ public static class WinFormsUtil
     public static bool OpenWindowExists<T>(this Form parent) where T : Form
     {
         var form = FirstFormOfType<T>();
-        if (form == null)
+        if (form is null)
             return false;
 
         form.CenterToForm(parent);
@@ -199,7 +200,7 @@ public static class WinFormsUtil
 
     public static void RemoveDropCB(object? sender, KeyEventArgs e)
     {
-        if (sender == null)
+        if (sender is null)
             return;
         ((ComboBox)sender).DroppedDown = false;
     }
@@ -259,7 +260,7 @@ public static class WinFormsUtil
     /// <param name="extensions">Misc extensions of <see cref="PKM"/> files supported by the Save File.</param>
     /// <param name="path">Output result path</param>
     /// <returns>Result of the dialog menu indicating if a file is to be loaded from the output path.</returns>
-    public static bool OpenSAVPKMDialog(IEnumerable<string> extensions, out string? path)
+    public static bool OpenSAVPKMDialog(IEnumerable<string> extensions, [NotNullWhen(true)] out string? path)
     {
         var sb = new StringBuilder(128);
         foreach (var type in extensions)
@@ -291,7 +292,8 @@ public static class WinFormsUtil
         {
             try
             {
-                var sav = SaveFinder.FindMostRecentSaveFile();
+                var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                var sav = SaveFinder.FindMostRecentSaveFile(cts.Token);
                 return sav?.Metadata.FilePath;
             }
             catch (Exception ex)

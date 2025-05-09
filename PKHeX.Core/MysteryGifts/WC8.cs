@@ -360,7 +360,7 @@ public sealed class WC8(byte[] Data) : DataMysteryGift(Data), ILangNick, INature
         get => GetOT(Language);
         set
         {
-            for (int i = 1; i < (int)LanguageID.ChineseT; i++)
+            for (int i = 1; i <= (int)LanguageID.ChineseT; i++)
                 SetOT(i, value);
         }
     }
@@ -406,7 +406,7 @@ public sealed class WC8(byte[] Data) : DataMysteryGift(Data), ILangNick, INature
         var metLevel = MetLevel > 0 ? MetLevel : currentLevel;
         var pi = PersonalTable.SWSH.GetFormEntry(Species, Form);
         var version = OriginGame != 0 ? (GameVersion)OriginGame : this.GetCompatibleVersion(tr.Version);
-        var language = (int)Core.Language.GetSafeLanguage(Generation, (LanguageID)tr.Language, version);
+        var language = (int)Core.Language.GetSafeLanguage(Generation, (LanguageID)tr.Language);
         bool hasOT = GetHasOT(language);
 
         var pk = new PK8
@@ -461,7 +461,7 @@ public sealed class WC8(byte[] Data) : DataMysteryGift(Data), ILangNick, INature
             MetLocation = Location,
             EggLocation = EggLocation,
         };
-        pk.SetMaximumPPCurrent();
+        pk.HealPP();
 
         if ((tr.Generation > Generation && OriginGame == 0) || !CanBeReceivedByVersion(pk.Version))
         {
@@ -515,14 +515,32 @@ public sealed class WC8(byte[] Data) : DataMysteryGift(Data), ILangNick, INature
 
         if (!IsHOMEGiftOld(date))
         {
-            pk.HeightScalar = PokeSizeUtil.GetRandomScalar(rnd);
-            pk.WeightScalar = PokeSizeUtil.GetRandomScalar(rnd);
+            if (IsScalarFixed)
+            {
+                pk.HeightScalar = pk.WeightScalar = GetHomeScalar();
+            }
+            else
+            {
+                pk.HeightScalar = PokeSizeUtil.GetRandomScalar(rnd);
+                pk.WeightScalar = PokeSizeUtil.GetRandomScalar(rnd);
+            }
         }
 
         pk.ResetPartyStats();
         pk.RefreshChecksum();
         return pk;
     }
+
+    /// <summary>
+    ///  HOME Keldeo is a special case where height/weight is fixed.
+    /// </summary>
+    public bool IsScalarFixed => CardID is 9029;
+
+    private byte GetHomeScalar() => CardID switch
+    {
+        9029 => 128,
+        _ => throw new ArgumentException(),
+    };
 
     private bool IsHOMEGiftOld(DateOnly date)
     {
@@ -535,10 +553,8 @@ public sealed class WC8(byte[] Data) : DataMysteryGift(Data), ILangNick, INature
     {
         if (!IsDateRestricted)
             return EncounterDate.GetDateSwitch();
-        if (EncounterServerDate.WC8GiftsChk.TryGetValue(Checksum, out var range))
-            return range.Start;
-        if (EncounterServerDate.WC8Gifts.TryGetValue(CardID, out range))
-            return range.Start;
+        if (this.GetDistributionWindow(out var window))
+            return window.GetGenerateDate();
         return EncounterDate.GetDateSwitch();
     }
 
@@ -740,6 +756,15 @@ public sealed class WC8(byte[] Data) : DataMysteryGift(Data), ILangNick, INature
                 if (pk is IScaledSize { HeightScalar: 0, WeightScalar: 0 })
                     return false; // Disallow anything that's not an Old HOME gift from having 0/0.
             }
+        }
+
+        if (IsScalarFixed)
+        {
+            var scalar = GetHomeScalar();
+            if (pk is IScaledSize hw && (hw.HeightScalar != scalar || hw.WeightScalar != scalar))
+                return false;
+            if (pk is IScaledSize3 s && s.Scale != scalar)
+                return false;
         }
 
         // Duplicate card; one with Nickname specified and another without.

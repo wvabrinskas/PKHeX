@@ -11,7 +11,7 @@ public static class MysteryGiftVerifier
 
     private static Dictionary<int, MysteryGiftRestriction>?[] Get()
     {
-        var s = new Dictionary<int, MysteryGiftRestriction>?[PKX.Generation + 1];
+        var s = new Dictionary<int, MysteryGiftRestriction>?[Latest.Generation + 1];
         for (byte i = 3; i < s.Length; i++)
             s[i] = GetRestriction(i);
         return s;
@@ -48,7 +48,7 @@ public static class MysteryGiftVerifier
         if (lang != 0 && !lang.HasFlag((MysteryGiftRestriction) (1 << pk.Language)))
             return new CheckResult(Severity.Invalid, CheckIdentifier.GameOrigin, string.Format(LOTLanguage, lang.GetSuggestedLanguage(), pk.Language));
 
-        if (pk is IRegionOrigin tr)
+        if (pk is IRegionOriginReadOnly tr)
         {
             var region = value & MysteryGiftRestriction.RegionRestrict;
             if (region != 0 && !region.HasFlag((MysteryGiftRestriction)((int)MysteryGiftRestriction.RegionBase << tr.ConsoleRegion)))
@@ -61,7 +61,7 @@ public static class MysteryGiftVerifier
     private static bool TryGetRestriction(MysteryGift g, out MysteryGiftRestriction val)
     {
         var restrict = RestrictionSet[g.Generation];
-        if (restrict != null)
+        if (restrict is not null)
             return restrict.TryGetValue(g.GetHashCode(), out val);
         val = MysteryGiftRestriction.None;
         return false;

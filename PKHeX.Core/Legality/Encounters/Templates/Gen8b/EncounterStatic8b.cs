@@ -7,7 +7,8 @@ namespace PKHeX.Core;
 /// Generation 8 Static Encounter
 /// </summary>
 public sealed record EncounterStatic8b(GameVersion Version)
-    : IEncounterable, IEncounterMatch, IEncounterConvertible<PB8>, IFlawlessIVCount, IFatefulEncounterReadOnly, IStaticCorrelation8b
+    : IEncounterable, IEncounterMatch, IEncounterConvertible<PB8>,
+        IFlawlessIVCount, IFatefulEncounterReadOnly, IStaticCorrelation8b, IGenerateSeed32
 {
     public byte Generation => 8;
     public EntityContext Context => EntityContext.Gen8b;
@@ -60,8 +61,8 @@ public sealed record EncounterStatic8b(GameVersion Version)
 
     public PB8 ConvertToPKM(ITrainerInfo tr, EncounterCriteria criteria)
     {
+        int language = (int)Language.GetSafeLanguage(Generation, (LanguageID)tr.Language);
         var version = this.GetCompatibleVersion(tr.Version);
-        int lang = (int)Language.GetSafeLanguage(Generation, (LanguageID)tr.Language, version);
         var pi = PersonalTable.BDSP[Species, Form];
         var pk = new PB8
         {
@@ -76,12 +77,12 @@ public sealed record EncounterStatic8b(GameVersion Version)
 
             ID32 = tr.ID32,
             Version = version,
-            Language = lang,
+            Language = language,
             OriginalTrainerGender = tr.Gender,
             OriginalTrainerName = tr.OT,
             OriginalTrainerFriendship = pi.BaseFriendship,
 
-            Nickname = SpeciesName.GetSpeciesNameGeneration(Species, lang, Generation),
+            Nickname = SpeciesName.GetSpeciesNameGeneration(Species, language, Generation),
         };
 
         if (IsEgg)
@@ -114,6 +115,16 @@ public sealed record EncounterStatic8b(GameVersion Version)
             var shiny = Shiny == Shiny.Never ? Shiny.Never : Shiny.Random;
             Wild8bRNG.ApplyDetails(pk, criteria, shiny, FlawlessIVCount, Ability);
         }
+    }
+
+    public bool GenerateSeed32(PKM pk, uint seed)
+    {
+        if (!IsRoaming)
+            return false;
+        var criteria = EncounterCriteria.Unrestricted;
+        var shiny = Shiny == Shiny.Random ? Shiny.FixedValue : Shiny;
+        Roaming8bRNG.TryApplyFromSeed(pk, criteria, shiny, FlawlessIVCount, seed);
+        return true;
     }
 
     #endregion

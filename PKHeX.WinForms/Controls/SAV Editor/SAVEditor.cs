@@ -287,7 +287,7 @@ public partial class SAVEditor : UserControl, ISlotViewer<PictureBox>, ISaveFile
                 L_SlotOccupied[i].Text = $"{i + 1}: ✘";
                 var pb = UpdateSlot(i);
                 var current = pb.Image;
-                if (current != null)
+                if (current is not null)
                     pb.Image = ImageUtil.ChangeOpacity(current, 0.6);
             }
         }
@@ -474,7 +474,7 @@ public partial class SAVEditor : UserControl, ISlotViewer<PictureBox>, ISaveFile
         if (M.Boxes.Count > 1) // subview open
         {
             var z = M.Boxes[1].ParentForm;
-            if (z == null)
+            if (z is null)
                 return;
             z.CenterToForm(ParentForm);
             z.BringToFront();
@@ -696,7 +696,7 @@ public partial class SAVEditor : UserControl, ISlotViewer<PictureBox>, ISaveFile
         void TryOpen(SaveFile sav, IReadOnlyList<SlotGroup> g)
         {
             var form = WinFormsUtil.FirstFormOfType<SAV_GroupViewer>();
-            if (form != null)
+            if (form is not null)
             {
                 form.CenterToForm(ParentForm);
             }
@@ -907,15 +907,15 @@ public partial class SAVEditor : UserControl, ISlotViewer<PictureBox>, ISaveFile
     }
 
     // File I/O
-    public bool GetBulkImportSettings(out bool clearAll, out bool overwrite, out PKMImportSetting noSetb)
+    public bool GetBulkImportSettings(out bool clearAll, out bool overwrite, out EntityImportSettings settings)
     {
-        clearAll = false; noSetb = PKMImportSetting.UseDefault; overwrite = false;
+        clearAll = false; settings = default; overwrite = false;
         var dr = WinFormsUtil.Prompt(MessageBoxButtons.YesNoCancel, MsgSaveBoxImportClear, MsgSaveBoxImportClearNo);
         if (dr == DialogResult.Cancel)
             return false;
 
         clearAll = dr == DialogResult.Yes;
-        noSetb = GetPKMSetOverride(ModifyPKM);
+        settings = GetImportSettingsOverride();
         return true;
     }
 
@@ -941,7 +941,7 @@ public partial class SAVEditor : UserControl, ISlotViewer<PictureBox>, ISaveFile
     public bool ExportSaveFile()
     {
         ValidateChildren();
-        bool reload = SAV is SAV7b b && b.FixPreWrite();
+        bool reload = SAV is IStorageCleanup b && b.FixStoragePreWrite();
         if (reload)
             ReloadSlots();
         return WinFormsUtil.ExportSAVDialog(SAV, SAV.CurrentBox);
@@ -1016,8 +1016,8 @@ public partial class SAVEditor : UserControl, ISlotViewer<PictureBox>, ISaveFile
             return false;
         }
 
-        var noSetb = GetPKMSetOverride(ModifyPKM);
-        var slotSkipped = ImportGroup(b.Contents, SAV, Box.CurrentBox, noSetb);
+        var settings = GetImportSettingsOverride();
+        var slotSkipped = ImportGroup(b.Contents, SAV, Box.CurrentBox, settings);
 
         SetPKMBoxes();
         UpdateBoxViewers();
@@ -1027,7 +1027,7 @@ public partial class SAVEditor : UserControl, ISlotViewer<PictureBox>, ISaveFile
         return true;
     }
 
-    private static int ImportGroup(IEnumerable<PKM> data, SaveFile sav, int box, PKMImportSetting noSetb)
+    private static int ImportGroup(IEnumerable<PKM> data, SaveFile sav, int box, EntityImportSettings settings)
     {
         var type = sav.PKMType;
         int slotSkipped = 0;
@@ -1047,7 +1047,7 @@ public partial class SAVEditor : UserControl, ISlotViewer<PictureBox>, ISaveFile
                 slotSkipped++;
                 continue;
             }
-            sav.SetBoxSlotAtIndex(x, box, i, noSetb);
+            sav.SetBoxSlotAtIndex(x, box, i, settings);
         }
 
         return slotSkipped;
@@ -1059,7 +1059,7 @@ public partial class SAVEditor : UserControl, ISlotViewer<PictureBox>, ISaveFile
         if (!SAV.HasBox)
             return false;
 
-        if (path == null && !IsFolderPath(out path))
+        if (path is null && !IsFolderPath(out path))
         {
             result = path;
             return false;
@@ -1068,10 +1068,10 @@ public partial class SAVEditor : UserControl, ISlotViewer<PictureBox>, ISaveFile
         if (!Directory.Exists(path))
             return false;
 
-        if (!GetBulkImportSettings(out bool clearAll, out var overwrite, out var noSetb))
+        if (!GetBulkImportSettings(out bool clearAll, out var overwrite, out var settings))
             return false;
 
-        SAV.LoadBoxes(path, out result, Box.CurrentBox, clearAll, overwrite, noSetb);
+        SAV.LoadBoxes(path, out result, Box.CurrentBox, clearAll, overwrite, settings);
         SetPKMBoxes();
         UpdateBoxViewers();
         return true;
@@ -1121,7 +1121,7 @@ public partial class SAVEditor : UserControl, ISlotViewer<PictureBox>, ISaveFile
                 if (height > allowed)
                 {
                     var form = FindForm();
-                    if (form != null)
+                    if (form is not null)
                         form.Height += height - allowed;
                 }
             }
@@ -1331,7 +1331,9 @@ public partial class SAVEditor : UserControl, ISlotViewer<PictureBox>, ISaveFile
     private static void ExportShowdownText(SaveFile sav, string success, Func<SaveFile, IEnumerable<PKM>> fetch)
     {
         var list = fetch(sav);
-        var result = ShowdownParsing.GetShowdownSets(list, Environment.NewLine + Environment.NewLine);
+        var programLanguage = Language.GetLanguageValue(Main.Settings.Startup.Language);
+        var settings = Main.Settings.BattleTemplate.Export.GetSettings(programLanguage, sav.Context);
+        var result = ShowdownParsing.GetShowdownSets(list, Environment.NewLine + Environment.NewLine, settings);
         if (string.IsNullOrWhiteSpace(result))
             return;
         if (WinFormsUtil.SetClipboardText(result))
@@ -1382,19 +1384,18 @@ public partial class SAVEditor : UserControl, ISlotViewer<PictureBox>, ISaveFile
         ResetParty();
     }
 
-    private static PKMImportSetting GetPKMSetOverride(bool currentSetting)
+    private static EntityImportSettings GetImportSettingsOverride()
     {
-        var yn = currentSetting ? MsgYes : MsgNo;
         var choice = WinFormsUtil.Prompt(MessageBoxButtons.YesNoCancel,
             MsgSaveBoxImportModifyIntro,
             MsgSaveBoxImportModifyYes + Environment.NewLine +
             MsgSaveBoxImportModifyNo + Environment.NewLine +
-            string.Format(MsgSaveBoxImportModifyCurrent, yn));
+            string.Format(MsgSaveBoxImportModifyCurrent, SaveFile.SetUpdateSettings));
         return choice switch
         {
-            DialogResult.Yes => PKMImportSetting.Update,
-            DialogResult.No => PKMImportSetting.Skip,
-            _ => PKMImportSetting.UseDefault,
+            DialogResult.Yes => EntityImportSettings.All,
+            DialogResult.No => EntityImportSettings.None,
+            _ => default,
         };
     }
 
