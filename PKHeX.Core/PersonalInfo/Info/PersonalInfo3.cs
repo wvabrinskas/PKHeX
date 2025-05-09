@@ -78,6 +78,8 @@ public sealed class PersonalInfo3(Memory<byte> Raw) : PersonalInfo, IPersonalAbi
 
     /// <summary>
     /// Technical Machine moves corresponding to their index within TM bitflag permissions.
+    /// Numbers here are in order of TM number, the value is the value in the MoveInfo3.cs
+    /// eg. Blunt Pass is number 355 and the TM number is 51, so it's at index 51 with a value of 355
     /// </summary>
     public static ReadOnlySpan<ushort> MachineMovesTechnical =>
     [
@@ -86,6 +88,7 @@ public sealed class PersonalInfo3(Memory<byte> Raw) : PersonalInfo, IPersonalAbi
         218, 076, 231, 085, 087, 089, 216, 091, 094, 247,
         280, 104, 115, 351, 053, 188, 201, 126, 317, 332,
         259, 263, 290, 156, 213, 168, 211, 285, 289, 315,
+        355
     ];
 
     /// <summary>
